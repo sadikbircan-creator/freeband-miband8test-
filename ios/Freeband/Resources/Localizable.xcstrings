@@ -31,6 +31,16 @@
         }
       }
     },
+    "%@ can't vibrate on request.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ istek üzerine titreyemez."
+          }
+        }
+      }
+    },
     "%@ day: %lld min in heart-rate zones, most of it in zone %lld.": {
       "localizations": {
         "tr": {
@@ -58,6 +68,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ verimli"
+          }
+        }
+      }
+    },
+    "%@ is looking for this phone": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ bu telefonu arıyor"
+          }
+        }
+      }
+    },
+    "%@ is looking for this phone. Tap to stop ringing.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ bu telefonu arıyor. Çalmayı durdurmak için dokun."
           }
         }
       }
@@ -1144,6 +1174,16 @@
         }
       }
     },
+    "Connected. %@ can find this phone.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı. %@ bu telefonu bulabilir."
+          }
+        }
+      }
+    },
     "Connecting…": {
       "localizations": {
         "tr": {
@@ -1535,6 +1575,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bul"
+          }
+        }
+      }
+    },
+    "Find Phone": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telefonu bul"
           }
         }
       }
@@ -2177,6 +2227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Normalin öğreniliyor"
+          }
+        }
+      }
+    },
+    "Lets %@ find this phone. Mi Fitness can't connect while it's on.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ bu telefonu bulabilsin. Açıkken Mi Fitness bağlanamaz."
           }
         }
       }
@@ -3662,6 +3722,16 @@
         }
       }
     },
+    "Stay connected": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı kal"
+          }
+        }
+      }
+    },
     "Steady": {
       "comment": "Day verdict",
       "localizations": {
@@ -3719,6 +3789,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Durdur"
+          }
+        }
+      }
+    },
+    "Stop ringing": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Çalmayı durdur"
           }
         }
       }
@@ -4369,6 +4449,16 @@
         }
       }
     },
+    "Waiting for %@…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ bekleniyor…"
+          }
+        }
+      }
+    },
     "Wakes you in light sleep.": {
       "localizations": {
         "tr": {
@@ -4588,6 +4678,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yaşın bilinmediği için maksimum nabız varsayıldı. Doğum yılını Profil'e ekle."
+          }
+        }
+      }
+    },
+    "Your band": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bandın"
           }
         }
       }
