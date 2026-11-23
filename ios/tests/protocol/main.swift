@@ -171,6 +171,52 @@ let v1: [String: Any] = [
     "v1_auth_reset": authReset,
 ]
 
+// Mi Band 8 watch-face upload: command protobuf, MD5/CRC32 and 0055 part framing.
+let uploadSample = Data((0..<5000).map { UInt8($0 & 0xFF) })
+let uploadParts = try! MiWatchFaceUpload.parts(file: uploadSample, chunkSize: 2048)
+precondition(MiWatchFaceUpload.md5(Data("abc".utf8)).map { String(format: "%02x", $0) }.joined() == "900150983cd24fb0d6963f7d28e17f72")
+precondition(MiWatchFaceUpload.crc32(Data("123456789".utf8)) == 0xCBF43926)
+precondition(uploadParts.count == 3)
+precondition(Array(uploadParts[0].prefix(4)) == [3, 0, 1, 0])
+
+let uploadSingleFrame = uploadChannelFrameForTest()
+precondition(Array(uploadSingleFrame.prefix(6)) == [0, 0, 2, 1, 0, 0])
+
+var metadataFile = Data(repeating: 0, count: 0xA8)
+metadataFile.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
+metadataFile[0x1C] = 2
+metadataFile.replaceSubrange(0x20..<0x24, with: Data([0xA8, 0, 0, 0]))
+metadataFile.replaceSubrange(0x28..<0x31, with: Data("561170642".utf8))
+metadataFile.replaceSubrange(0x68..<0xA4, with: Data("Atatürk".utf8) + Data(repeating: 0, count: 52))
+let compressedPreview = Data([0xE0, 0x21, 0xA5, 0x5A, 0x82, 0, 0, 0, 4, 0, 0xF8])
+metadataFile.append(contentsOf: [3, 0, 0, 0, 2, 0, 2, 0, UInt8(compressedPreview.count), 0, 0, 0])
+metadataFile.append(compressedPreview)
+let parsedMetadata = try! MiWatchFaceUpload.parseFile(metadataFile)
+precondition(parsedMetadata.id == "561170642")
+precondition(parsedMetadata.name == "Atatürk")
+precondition(parsedMetadata.faceCount == 2)
+let decodedPreview = MiWatchFacePreview.decode(metadataFile)!
+precondition(decodedPreview.width == 2)
+precondition(decodedPreview.height == 2)
+precondition(decodedPreview.rgba.count == 16)
+precondition(MiWatchFaceUpload.installCommand(faceID: "167210065", size: 379168).map { String(format: "%02x", $0) }.joined()
+    == "080410043211320f0a0931363732313030363510a09217")
+
+func uploadChannelFrameForTest() -> Data {
+    var channel = MiV1Channel(maxWrite: 244)
+    channel.cipher = v1Cipher
+    channel.authenticated()
+    channel.incrementNonce = false
+    return channel.send(Data(repeating: 0x5A, count: 32)).writes[0]
+}
+
+var uploadChannel = MiV1Channel(maxWrite: 244)
+uploadChannel.cipher = v1Cipher
+uploadChannel.authenticated()
+uploadChannel.incrementNonce = false
+let uploadChannelFrames = [fmt(uploadChannel.send(Data(repeating: 0x5A, count: 32)))]
+precondition(uploadChannel.counter == 1)
+
 // Health monitoring settings (docs/CAPABILITIES.md §9.1-9.3). hrBody is what a band could
 // return, with fields the app doesn't know (20, 21, a fixed32 22) that must come back unchanged.
 func pb(_ build: (inout PBWriter) -> Void) -> PBWriter { var w = PBWriter(); build(&w); return w }
