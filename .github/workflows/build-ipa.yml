@@ -2,7 +2,7 @@ name: Build unsigned iOS IPA
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/watchface-management]
     paths:
       - "ios/**"
       - ".github/workflows/build-ipa.yml"
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 
-# Keep only the latest fork-local IPA build for each selected ref.
+# Only the newest branch build is useful for this iterative IPA workflow.
 concurrency:
   group: freeband-ipa-${{ github.ref }}
   cancel-in-progress: true
@@ -37,21 +37,7 @@ jobs:
         run: |
           python3 -m venv /tmp/freeband-test-venv
           /tmp/freeband-test-venv/bin/python -m pip install cryptography
-          SOURCES=(
-            ../../Freeband/Band/MiProtocol.swift
-            ../../Freeband/Band/MiProtocolV1.swift
-            ../../Freeband/Band/MiBind.swift
-            ../../Freeband/Band/WatchFaces.swift
-            ../../Freeband/Band/MiWatchFaceUpload.swift
-            ../../Freeband/Band/MiWatchFacePreview.swift
-          )
-          if [ -f ../../Freeband/Band/WatchFaceCompatibility.swift ] && [ -f ../../Freeband/Band/WatchFaceProfiles.swift ]; then
-            SOURCES+=(
-              ../../Freeband/Band/WatchFaceCompatibility.swift
-              ../../Freeband/Band/WatchFaceProfiles.swift
-            )
-          fi
-          swiftc "${SOURCES[@]}" main.swift -o /tmp/mitest
+          swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest
           TZ=UTC /tmp/mitest | /tmp/freeband-test-venv/bin/python check_vectors.py
 
       - name: Build unsigned IPA
