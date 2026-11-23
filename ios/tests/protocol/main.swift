@@ -131,10 +131,11 @@ let findPhoneParsed = [
 ]
 
 // Watch-face protobuf: list request, repeated inventory items, action payloads and acknowledgements.
+let longFaceID = "561170642123"
 var faceA = PBWriter()
 faceA.string(1, "1001"); faceA.string(2, "Classic"); faceA.bool(3, true); faceA.bool(4, false)
 var faceB = PBWriter()
-faceB.string(1, "2002"); faceB.string(2, "Custom"); faceB.bool(3, false); faceB.bool(4, true)
+faceB.string(1, longFaceID); faceB.string(2, "Custom"); faceB.bool(3, false); faceB.bool(4, true)
 var faceList = PBWriter()
 faceList.message(1, faceA); faceList.message(1, faceB)
 var watchfacePayload = PBWriter()
@@ -144,10 +145,12 @@ watchfaceResponse.varint(1, 4); watchfaceResponse.varint(2, 0); watchfaceRespons
 let parsedWatchFaces = MiWatchFaceProtocol.readList(from: PBMessage(watchfaceResponse.data)!)!
 precondition(parsedWatchFaces.count == 2)
 precondition(parsedWatchFaces[0] == WatchFace(id: "1001", name: "Classic", isActive: true, canDelete: false))
-precondition(parsedWatchFaces[1] == WatchFace(id: "2002", name: "Custom", isActive: false, canDelete: true))
+precondition(parsedWatchFaces[1] == WatchFace(id: longFaceID, name: "Custom", isActive: false, canDelete: true))
 precondition(hex(MiWatchFaceProtocol.listCommand()) == "08041000")
-precondition(hex(MiWatchFaceProtocol.setCommand(id: "2002")) == "080410013206120432303032")
-precondition(hex(MiWatchFaceProtocol.deleteCommand(id: "2002")) == "080410023206120432303032")
+precondition(hex(MiWatchFaceProtocol.setCommand(id: longFaceID)) == "08041001320e120c353631313730363432313233")
+precondition(hex(MiWatchFaceProtocol.deleteCommand(id: longFaceID)) == "08041002320e120c353631313730363432313233")
+precondition(hex(MiWatchFaceUpload.installCommand(faceID: longFaceID, size: 379168))
+    == "08041004321432120a0c35363131373036343231323310a09217")
 var watchfaceAckBody = PBWriter(); watchfaceAckBody.bool(4, true)
 var watchfaceAck = PBWriter(); watchfaceAck.varint(1, 4); watchfaceAck.varint(2, 1); watchfaceAck.message(6, watchfaceAckBody)
 precondition(MiWatchFaceProtocol.acknowledgement(from: PBMessage(watchfaceAck.data)!) == true)
@@ -186,7 +189,6 @@ var metadataFile = Data(repeating: 0, count: 0xA8)
 metadataFile.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
 metadataFile[0x1C] = 2
 metadataFile.replaceSubrange(0x20..<0x24, with: Data([0xA8, 0, 0, 0]))
-let longFaceID = "561170642123"
 metadataFile.replaceSubrange(0x28..<0x34, with: Data(longFaceID.utf8))
 metadataFile.replaceSubrange(0x68..<0xA4, with: Data("Atatürk".utf8) + Data(repeating: 0, count: 52))
 let compressedPreview = Data([0xE0, 0x21, 0xA5, 0x5A, 0x82, 0, 0, 0, 4, 0, 0xF8])
@@ -200,12 +202,34 @@ do {
     _ = try MiWatchFaceUpload.parts(file: uploadSample, chunkSize: 2048, resumePosition: 1)
     preconditionFailure("nonzero watch-face resume position must be rejected")
 } catch MiWatchFaceUpload.Failure.resumeNotSupported {
-    // Expected: the first implementation refuses ambiguous resume semantics.
+    // Expected: a partial transfer is never resumed; a fresh user retry restarts preparation.
 } catch {
     preconditionFailure("unexpected resume rejection: \(error)")
 }
 precondition(parsedMetadata.name == "Atatürk")
 precondition(parsedMetadata.faceCount == 2)
+
+var nonDecimalIDFile = metadataFile
+nonDecimalIDFile.replaceSubrange(0x28..<0x34, with: Data("56117064A123".utf8))
+do {
+    _ = try MiWatchFaceUpload.parseFile(nonDecimalIDFile)
+    preconditionFailure("a non-decimal watch-face ID must be rejected")
+} catch MiWatchFaceUpload.ParseFailure.invalidID {
+    // Expected: watch-face IDs are decimal digits only.
+} catch {
+    preconditionFailure("unexpected non-decimal ID rejection: (error)")
+}
+
+var unterminatedIDFile = metadataFile
+unterminatedIDFile.replaceSubrange(0x28..<0x68, with: Data(repeating: 0x31, count: 0x40))
+do {
+    _ = try MiWatchFaceUpload.parseFile(unterminatedIDFile)
+    preconditionFailure("an unterminated watch-face ID must be rejected")
+} catch MiWatchFaceUpload.ParseFailure.invalidID {
+    // Expected: the ID field must contain a NUL terminator.
+} catch {
+    preconditionFailure("unexpected unterminated ID rejection: (error)")
+}
 
 var zeroStyleFile = metadataFile
 zeroStyleFile[0x1C] = 0
@@ -253,6 +277,20 @@ let rle10Literal = MiWatchFacePreview.decode(makePreviewFixture(
     encoded: [0x84, 0xF8, 0x00, 0x07, 0xE0, 0x1F, 0x00, 0xFF, 0xFF]
 ))
 precondition(rle10Literal?.rgba.count == 16)
+
+let rle10Run = MiWatchFacePreview.decode(makePreviewFixture(
+    sign: 3, bytesPerPixel: 2, decodedLength: 8,
+    encoded: [0x04, 0xF8, 0x00]
+))
+precondition(rle10Run?.rgba.count == 16)
+if let rle10Run {
+    let firstPixel = Array(rle10Run.rgba[0..<4])
+    precondition((0..<4).allSatisfy { index in
+        Array(rle10Run.rgba[(index * 4)..<(index * 4 + 4)]) == firstPixel
+    })
+} else {
+    preconditionFailure("RLE v1 repeat record should decode")
+}
 
 let rle20Literal = MiWatchFacePreview.decode(makePreviewFixture(
     sign: 14, bytesPerPixel: 1, decodedLength: 4,
