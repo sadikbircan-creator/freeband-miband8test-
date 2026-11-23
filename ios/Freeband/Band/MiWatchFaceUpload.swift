@@ -11,6 +11,7 @@ enum MiWatchFaceUpload {
         case emptyFile
         case invalidChunkSize
         case invalidResumeOffset
+        case resumeNotSupported
         case tooManyParts
     }
 
@@ -48,6 +49,7 @@ enum MiWatchFaceUpload {
         guard !file.isEmpty else { throw Failure.emptyFile }
         guard chunkSize > 4 else { throw Failure.invalidChunkSize }
         guard resumePosition >= 0 && resumePosition <= file.count else { throw Failure.invalidResumeOffset }
+        guard resumePosition == 0 else { throw Failure.resumeNotSupported }
 
         let digest = md5(file)
         var body = Data([0, UInt8(dataType)])
@@ -84,6 +86,8 @@ enum MiWatchFaceUpload {
             throw ParseFailure.invalidMagic
         }
         let faceCount = Int(bytes[0x1C]) | (Int(bytes[0x1D]) << 8)
+        // Band 8 profile assumption: accepted files contain normal and always-on styles.
+        // This is not a universal Xiaomi watch-face rule; future profiles must define their own policy.
         guard faceCount == 2 else { throw ParseFailure.missingAlwaysOnFace(faceCount) }
 
         func headerString(_ range: Range<Int>) -> String? {
@@ -92,7 +96,10 @@ enum MiWatchFaceUpload {
             guard !trimmed.isEmpty else { return nil }
             return String(data: Data(trimmed), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard let id = headerString(0x28..<0x31), id.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || $0 == 95 || $0 == 45 }) else {
+        // Read the decimal ID up to its NUL terminator, bounded to the header region before the name.
+        let idBytes = bytes[0x28..<0x68].prefix { $0 != 0 }
+        guard !idBytes.isEmpty, idBytes.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+              let id = String(data: Data(idBytes), encoding: .ascii) else {
             throw ParseFailure.invalidID
         }
         let name = headerString(0x68..<0xA4) ?? "Imported watch face"

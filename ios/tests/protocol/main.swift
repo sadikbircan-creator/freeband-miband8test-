@@ -186,13 +186,24 @@ var metadataFile = Data(repeating: 0, count: 0xA8)
 metadataFile.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
 metadataFile[0x1C] = 2
 metadataFile.replaceSubrange(0x20..<0x24, with: Data([0xA8, 0, 0, 0]))
-metadataFile.replaceSubrange(0x28..<0x31, with: Data("561170642".utf8))
+metadataFile.replaceSubrange(0x28..<0x34, with: Data("561170642123".utf8))
 metadataFile.replaceSubrange(0x68..<0xA4, with: Data("Atatürk".utf8) + Data(repeating: 0, count: 52))
 let compressedPreview = Data([0xE0, 0x21, 0xA5, 0x5A, 0x82, 0, 0, 0, 4, 0, 0xF8])
 metadataFile.append(contentsOf: [3, 0, 0, 0, 2, 0, 2, 0, UInt8(compressedPreview.count), 0, 0, 0])
 metadataFile.append(compressedPreview)
 let parsedMetadata = try! MiWatchFaceUpload.parseFile(metadataFile)
-precondition(parsedMetadata.id == "561170642")
+precondition(parsedMetadata.id == "561170642123")
+precondition(WatchFaceProfile.resolve(name: "Xiaomi Smart Band 8 A1B2", model: "band10") != nil)
+precondition(WatchFaceProfile.resolve(name: "Redmi Watch 5 Active D3DD", model: "band10") == nil)
+precondition(WatchFaceProfile.resolve(name: "Unknown wearable", model: "band10") == nil)
+do {
+    _ = try MiWatchFaceUpload.parts(file: uploadSample, chunkSize: 2048, resumePosition: 1)
+    preconditionFailure("nonzero watch-face resume position must be rejected")
+} catch MiWatchFaceUpload.Failure.resumeNotSupported {
+    // Expected: the first implementation refuses ambiguous resume semantics.
+} catch {
+    preconditionFailure("unexpected resume rejection: \(error)")
+}
 precondition(parsedMetadata.name == "Atatürk")
 precondition(parsedMetadata.faceCount == 2)
 let decodedPreview = MiWatchFacePreview.decode(metadataFile)!

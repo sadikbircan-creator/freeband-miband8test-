@@ -30,7 +30,7 @@ Instructions for coding agents (and people) changing this repository. The README
 
 ```sh
 # protocol vectors (V2, V1 and the local bind); needs python3 with `cryptography`. TZ=UTC: notify_cmd's expected time is UTC.
-cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
+cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
 
 # activity files: Swift against the fixtures and the Python reference, then the reference alone
 cd ios/tests/activity/swift && swiftc ../../../Freeband/Band/ActivityFiles.swift main.swift -o /tmp/act && /tmp/act
@@ -65,6 +65,7 @@ The simulator has no Bluetooth, so anything that talks to a band is tried on the
 Where the facts come from, so they need not be looked up again:
 
 - `vendor/` (ignored; clone again if missing): `Gadgetbridge` (codeberg.org/Freeyourgadget/Gadgetbridge), `astrobox-Core` and `astrobox-Pb` (github.com/AstralSightStudios/AstroBox-NG-Module-Core and -Pb), and `mifitness/`: Mi Fitness for Android (`com.xiaomi.wearable`, fetched with `apkeep -a com.xiaomi.wearable -d apk-pure`) with its jadx output in `mifitness/out/sources`. The band-side parsers are under `com/xiaomi/fit/fitness/parser/` and `.../device/mi/`; class names are obfuscated elsewhere, so search for strings and enum names.
+- Watch-face protocol, file-format assumptions, and future-device research: `docs/WATCH-FACES.md`.
 - Notes with citations: `docs/MIFITNESS-2026-11-13.md` (what the vendor app sends, parses and computes), `docs/SOURCES-2026-11-13.md` (today's Gadgetbridge and AstroBox), `docs/BIND.md`, `docs/SLEEP-WRITEBACK.md`, and the measured sections of `docs/ACTIVITY.md` and `docs/CAPABILITIES.md`.
 - `out/` (ignored): logs, calibration reports and database copies from the maintainer's band. Health data; never committed.
 

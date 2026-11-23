@@ -24,9 +24,24 @@ struct WatchFaceManagementView: View {
         return false
     }
     private var isLoading: Bool { isBusy && (link.purpose == .watchFaces || isInstalling) }
+    private var matchingInstalledFace: WatchFace? {
+        guard let importedFace else { return nil }
+        return link.watchFaces.first(where: { $0.id == importedFace.id })
+    }
 
     var body: some View {
         List {
+            if WatchFaceProfile.resolve(name: band.name, model: band.model) == nil {
+                Section {
+                    Label(String(localized: "Watch-face management is not yet supported for this device."), systemImage: "hourglass")
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "A tested watch-face profile is not available for this band yet."))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(String(localized: "Work in progress"))
+                }
+            } else {
             Section {
                 if isLoading {
                     HStack(spacing: 12) {
@@ -92,13 +107,23 @@ struct WatchFaceManagementView: View {
                         Text("\(String(localized: "Mi Band 8 watch-face file")) · \(importedFace.data.count) bayt")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                        Button(String(localized: "Install and activate")) {
+                        if matchingInstalledFace != nil {
+                            Label(String(localized: "A watch face with this ID is already installed"), systemImage: "exclamationmark.triangle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            Text(String(localized: "Delete the matching watch face from the band before installing this file. If it is active, activate another face first. Freeband will not delete it automatically."))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button(matchingInstalledFace == nil
+                               ? String(localized: "Install and activate")
+                               : String(localized: "Delete matching face to continue")) {
                             showingInstallConfirmation = true
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Color(red: 0.08, green: 0.29, blue: 0.58))
                         .foregroundStyle(.white)
-                        .disabled(isBusy)
+                        .disabled(isBusy || matchingInstalledFace != nil)
                     }
                     .padding(.vertical, 4)
                 }
@@ -107,22 +132,26 @@ struct WatchFaceManagementView: View {
             } footer: {
                 Text(String(localized: "Only Mi Band 8 binary watch faces with both the normal and always-on styles are accepted. Keep the band charged and close Mi Fitness during installation."))
             }
+            }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(String(localized: "Watch faces"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: refresh) {
-                    Image(systemName: "arrow.clockwise")
+            if WatchFaceProfile.resolve(name: band.name, model: band.model) != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: refresh) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(Text(String(localized: "Refresh watch faces")))
+                    .disabled(isBusy)
                 }
-                .accessibilityLabel(Text(String(localized: "Refresh watch faces")))
-                .disabled(isBusy)
             }
         }
         .task {
-            guard !didAutoLoad else { return }
+            guard WatchFaceProfile.resolve(name: band.name, model: band.model) != nil,
+                  !didAutoLoad else { return }
             didAutoLoad = true
             if link.watchFaces.isEmpty && !isBusy { refresh() }
         }
@@ -137,8 +166,8 @@ struct WatchFaceManagementView: View {
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                 let data = try Data(contentsOf: url)
-                importedFace = try MiWatchFaceUpload.parseFile(data)
-                importedPreview = MiWatchFacePreview.decode(data)
+                importedFace = try WatchFaceProfile.resolve(name: band.name, model: band.model)?.parseFile(data)
+                importedPreview = WatchFaceProfile.resolve(name: band.name, model: band.model)?.preview(data)
             } catch {
                 importedFace = nil
                 importedPreview = nil
@@ -146,7 +175,7 @@ struct WatchFaceManagementView: View {
             }
         }
         .confirmationDialog(
-            String(localized: "Install and activate this watch face?"),
+            String(localized: "Install this watch face?"),
             isPresented: $showingInstallConfirmation,
             titleVisibility: .visible
         ) {
@@ -156,7 +185,7 @@ struct WatchFaceManagementView: View {
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "This writes a binary watch-face file to your Mi Band 8 and then activates it. An incompatible file may cause problems with the band."))
+            Text(String(localized: "The watch will be checked again before installation. Any matching face must be deleted manually first."))
         }
         .alert(String(localized: "Couldn't open watch-face file"), isPresented: Binding(
             get: { importError != nil },

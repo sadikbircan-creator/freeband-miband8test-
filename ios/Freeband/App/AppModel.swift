@@ -109,7 +109,7 @@ final class AppModel: ObservableObject {
     func target(for band: Band) -> BandTarget? {
         let keys = Vault.bandKeys(band.id)
         guard !keys.isEmpty else { return nil }
-        return BandTarget(id: band.id, name: band.name, mac: band.mac, macSuffix: band.macSuffix,
+        return BandTarget(id: band.id, name: band.name, model: band.model, mac: band.mac, macSuffix: band.macSuffix,
                           keys: keys.map { BandKey(hex: $0).data })
     }
 
