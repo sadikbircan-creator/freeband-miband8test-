@@ -2,7 +2,7 @@ name: Build unsigned iOS IPA
 
 on:
   push:
-    branches: [main, feature/watchface-management]
+    branches: [main]
     paths:
       - "ios/**"
       - ".github/workflows/build-ipa.yml"
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 
-# Only the newest branch build is useful for this iterative IPA workflow.
+# Keep only the latest fork-local IPA build for each selected ref.
 concurrency:
   group: freeband-ipa-${{ github.ref }}
   cancel-in-progress: true
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -37,7 +37,21 @@ jobs:
         run: |
           python3 -m venv /tmp/freeband-test-venv
           /tmp/freeband-test-venv/bin/python -m pip install cryptography
-          swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift main.swift -o /tmp/mitest
+          SOURCES=(
+            ../../Freeband/Band/MiProtocol.swift
+            ../../Freeband/Band/MiProtocolV1.swift
+            ../../Freeband/Band/MiBind.swift
+            ../../Freeband/Band/WatchFaces.swift
+            ../../Freeband/Band/MiWatchFaceUpload.swift
+            ../../Freeband/Band/MiWatchFacePreview.swift
+          )
+          if [ -f ../../Freeband/Band/WatchFaceCompatibility.swift ] && [ -f ../../Freeband/Band/WatchFaceProfiles.swift ]; then
+            SOURCES+=(
+              ../../Freeband/Band/WatchFaceCompatibility.swift
+              ../../Freeband/Band/WatchFaceProfiles.swift
+            )
+          fi
+          swiftc "${SOURCES[@]}" main.swift -o /tmp/mitest
           TZ=UTC /tmp/mitest | /tmp/freeband-test-venv/bin/python check_vectors.py
 
       - name: Build unsigned IPA
@@ -45,7 +59,7 @@ jobs:
         run: sh tools/build-ipa.sh
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Freeband-unsigned-IPA
           path: ios/build/Freeband.ipa
