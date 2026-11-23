@@ -7368,6 +7368,66 @@
           }
         }
       }
+    },
+    "Watch-face operation failed": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kadran işlemi başarısız oldu."
+          }
+        }
+      }
+    },
+    "The band returned an invalid or mismatched watch-face install result.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bileklik geçersiz veya kimliği eşleşmeyen bir kadran yükleme sonucu döndürdü."
+          }
+        }
+      }
+    },
+    "The band rejected the watch-face file during verification.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bileklik kadran dosyasını doğrulama aşamasında reddetti."
+          }
+        }
+      }
+    },
+    "The band reported that watch-face installation failed.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bileklik kadran yüklemesinin başarısız olduğunu bildirdi."
+          }
+        }
+      }
+    },
+    "The band reports that this watch face is already installed or in use.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bileklik bu kadranın zaten yüklü veya kullanımda olduğunu bildiriyor."
+          }
+        }
+      }
+    },
+    "The band returned an unknown watch-face install result. See Diagnostics for details.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bileklik tanınmayan bir kadran yükleme sonucu döndürdü. Ayrıntılar için Tanılama bölümüne bakın."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
