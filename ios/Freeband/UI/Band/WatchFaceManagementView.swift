@@ -65,11 +65,6 @@ struct WatchFaceManagementView: View {
                         Text(String(localized: "Tap refresh to read the watch faces installed on your band."))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        if case .failed = link.phase {
-                            Text(link.phase.label)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
                     }
                     .padding(.vertical, 8)
                 } else {
@@ -81,6 +76,16 @@ struct WatchFaceManagementView: View {
                 Text(String(localized: "Installed on the band"))
             } footer: {
                 Text(String(localized: "Close Mi Fitness before managing watch faces. Only custom inactive faces can be deleted."))
+            }
+
+            if case .failed = link.phase, link.purpose.isWatchFaceOperation {
+                Section {
+                    Text(link.phase.label)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                } header: {
+                    Text(String(localized: "Watch-face operation failed"))
+                }
             }
 
             Section {
