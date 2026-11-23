@@ -217,7 +217,7 @@ do {
 } catch MiWatchFaceUpload.ParseFailure.invalidID {
     // Expected: watch-face IDs are decimal digits only.
 } catch {
-    preconditionFailure("unexpected non-decimal ID rejection: (error)")
+    preconditionFailure("unexpected non-decimal ID rejection: \(error)")
 }
 
 var unterminatedIDFile = metadataFile
@@ -228,7 +228,7 @@ do {
 } catch MiWatchFaceUpload.ParseFailure.invalidID {
     // Expected: the ID field must contain a NUL terminator.
 } catch {
-    preconditionFailure("unexpected unterminated ID rejection: (error)")
+    preconditionFailure("unexpected unterminated ID rejection: \(error)")
 }
 
 var zeroStyleFile = metadataFile
