@@ -956,7 +956,7 @@ final class BandLink: NSObject, ObservableObject {
             let resume = Int(resumeRaw)
             let chunkSize = Int(chunkSizeRaw)
             guard resume == 0 else {
-                note("← upload requested a nonzero resume offset ((resume)); refusing partial resume. A new installation attempt must start again at Command{4,4}.")
+                note("← upload requested a nonzero resume offset (\(resume)); refusing partial resume. A new installation attempt must start again at Command{4,4}.")
                 fail(.watchFaceResumeUnsupported)
                 return
             }
