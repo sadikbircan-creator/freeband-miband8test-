@@ -109,6 +109,12 @@ final class BandLink: NSObject, ObservableObject {
         case channelRefused
         /// The band reported an in-progress upload; Freeband refuses to resume partial data.
         case watchFaceResumeUnsupported
+        /// The band returned an unusable or mismatched terminal install response.
+        case watchFaceInstallResultMalformed
+        case watchFaceInstallVerificationFailed
+        case watchFaceInstallFailed
+        case watchFaceAlreadyInstalled
+        case watchFaceInstallUnknownStatus
         /// The session ended (stopped) before the band was read.
         case notRead
 
@@ -127,6 +133,11 @@ final class BandLink: NSObject, ObservableObject {
             case .channelUnavailable: return "channel_unavailable"
             case .channelRefused: return "channel_refused"
             case .watchFaceResumeUnsupported: return "watch_face_resume_unsupported"
+            case .watchFaceInstallResultMalformed: return "watch_face_install_result_malformed"
+            case .watchFaceInstallVerificationFailed: return "watch_face_install_verification_failed"
+            case .watchFaceInstallFailed: return "watch_face_install_failed"
+            case .watchFaceAlreadyInstalled: return "watch_face_already_installed"
+            case .watchFaceInstallUnknownStatus: return "watch_face_install_unknown_status"
             case .notRead: return "not_read"
             }
         }
@@ -147,6 +158,16 @@ final class BandLink: NSObject, ObservableObject {
             case .channelRefused: return String(localized: "The band didn't open its data channel. Try again.")
             case .watchFaceResumeUnsupported:
                 return String(localized: "The band reported a partial upload. Freeband won't resume it. Start a new installation attempt from the beginning.")
+            case .watchFaceInstallResultMalformed:
+                return String(localized: "The band returned an invalid or mismatched watch-face install result.")
+            case .watchFaceInstallVerificationFailed:
+                return String(localized: "The band rejected the watch-face file during verification.")
+            case .watchFaceInstallFailed:
+                return String(localized: "The band reported that watch-face installation failed.")
+            case .watchFaceAlreadyInstalled:
+                return String(localized: "The band reports that this watch face is already installed or in use.")
+            case .watchFaceInstallUnknownStatus:
+                return String(localized: "The band returned an unknown watch-face install result. See Diagnostics for details.")
             case .notRead: return String(localized: "Couldn't read the band.")
             }
         }
@@ -1045,7 +1066,7 @@ final class BandLink: NSObject, ObservableObject {
                   resultID == expectedID,
                   let code = result.varints[2] else {
                 note("← watch face install result is missing, malformed, or belongs to another face")
-                fail(.notRead)
+                fail(.watchFaceInstallResultMalformed)
                 return
             }
             switch code {
@@ -1054,16 +1075,16 @@ final class BandLink: NSObject, ObservableObject {
                 activateImportedWatchFace()
             case 0:
                 note("← watch face install result: verification failed")
-                fail(.notRead)
+                fail(.watchFaceInstallVerificationFailed)
             case 1:
                 note("← watch face install result: installation failed")
-                fail(.notRead)
+                fail(.watchFaceInstallFailed)
             case 3:
                 note("← watch face install result: face is already installed or in use")
-                fail(.notRead)
+                fail(.watchFaceAlreadyInstalled)
             default:
                 note("← watch face install result: unknown status \(code)")
-                fail(.notRead)
+                fail(.watchFaceInstallUnknownStatus)
             }
 
         case (13, 2):
