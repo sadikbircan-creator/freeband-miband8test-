@@ -8,16 +8,17 @@ Use one evidence label consistently for every technical claim and test result:
 
 - **[SOURCE]** — protocol or implementation fact supported by a direct source link. Link the exact source file (and relevant lines when available) beside the claim.
 - **[MEASURED]** — behavior measured on a physical device and supported by application diagnostic output. Use this label for the physical-device evidence requested in PR review; include model, firmware and relevant result details.
-- **[DIAGNOSTIC]** — behavior confirmed by Freeband diagnostic output or recorded application logs when it is not itself a physical-device measurement. Summarize the relevant evidence; never include authentication payloads, keys, MAC addresses or other secrets.
-- **[TESTED]** — a physical-device test personally observed and reported, where no retained diagnostic record or external source link is available.
+- **[DIAGNOSTIC]** — file structure or behavior confirmed by offline BIN inspection, Freeband diagnostic output or recorded application logs when it is not itself a physical-device measurement. Summarize the relevant evidence; never include authentication payloads, keys, MAC addresses or other secrets.
+- **[TESTED]** — a test directly observed and reported by the user where no retained diagnostic record is available. This can cover a physical-device check or a local file-validation test.
 - **[NOT TESTED]** — a behavior or assumption that has not yet been verified. Do not present it as supported or successful.
 
-A physical-device test backed by application logs should use **[MEASURED]** (and may also identify the diagnostic evidence in the description). Use **[DIAGNOSTIC]** for diagnostic-backed results that are not physical-device measurements. Use **[TESTED]** only when the result is based on the observed test report without diagnostic evidence.
+A physical-device test backed by application logs should use **[MEASURED]** (and may also identify the diagnostic evidence in the description). Use **[DIAGNOSTIC]** for diagnostic-backed results that are not physical-device measurements. Use **[TESTED]** when the result is based on the user's observation or report without retained diagnostic evidence.
 
 ## Current support boundary
 
 - **[MEASURED] Xiaomi Smart Band 8:** the existing watch-face work is tested against the Band 8. Its commands, file validation and FE95/0055 upload channel belong to the Band 8 profile.
 - **[NOT TESTED] Other Xiaomi devices:** sharing a Xiaomi protobuf envelope, FE95 service, or 0055 characteristic does not prove that the same watch-face file format, transport, chunk rules or install-result behavior is supported.
+- **Current import scope:** the Freeband picker accepts `.bin` files only. AstroBox's `.mwz` package extraction is documented as a research reference; `.mwz` parsing/extraction is not implemented in this fork.
 - Future devices must get their own profile. No other profile may fall back to Band 8 commands or file validation.
 
 ## Device profile routing in Freeband
@@ -54,10 +55,18 @@ Protocol sources:
 ## Band 8 file validation
 
 - [SOURCE] Gadgetbridge's [XiaomiFWHelper.java](https://codeberg.org/Freeyourgadget/Gadgetbridge/src/commit/83b2efe915631b484f5c0b15b0cd1b52ebea3580/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiFWHelper.java) reads the ID from offset `0x28` and name from `0x68` (source snapshot line range 388–440). The ID is NUL-terminated; it must not be truncated to a fixed nine-byte window.
-- [SOURCE] AstroBox's [resutils.rs](https://github.com/AstralSightStudios/AstroBox-NG-Module-Core/tree/6b9b82ddc875212a4ec4dd1deb68f39016460f61/src) documents the modern `5A A5 34 12` header and scans for 9- or 12-digit IDs (source snapshot line range 75–167); the same source documents MWZ handling (lines 1191–1194).
+- [SOURCE] AstroBox's [resutils.rs](https://github.com/AstralSightStudios/AstroBox-NG-Module-Core/blob/6b9b82ddc875212a4ec4dd1deb68f39016460f61/src/device/xiaomi/resutils.rs) documents the modern `5A A5 34 12` header and scans for 9- or 12-digit IDs (source snapshot line range 75–167); the same source documents MWZ handling (lines 1191–1194).
 - Freeband reads the decimal ID up to its NUL terminator, bounded to the ID/name header region. A 12-digit ID is covered by a synthetic protocol vector.
-- **[NOT TESTED] Two-style requirement:** the current Band 8 validator requires `faceCount == 2`, treating the two styles as normal and always-on. A public watch-face builder shows the format can encode one style without AOD or two with AOD (`Mi8WfBinTool.java`, `faceCount = hasAod ? 2 : 1`). This does not prove what every Band 8 firmware accepts. Keep the restriction inside the Band 8 profile; revisit only with a known-good one-style Band 8 file and a real-device test.
-- **[NOT TESTED] Preview decoding:** `MiWatchFacePreview.swift` reads the embedded preview offset and supports raw, palette and two RLE paths. Gadgetbridge's reference is `XiaomiBitmapUtils.java:39-44,75-148`. Freeband's RLE handling is not claimed to be byte-for-byte equivalent. Preview decoding is optional: failure to decode must never modify or reject the original BIN. Add real-file fixtures and compare against an independent decoder before widening format support.
+- [SOURCE] The [Mi8WfBinTool packer](https://github.com/zhy8388608/Mi8WfBinTool/blob/5e4195ce91b9d8810a7a2233c96b4cba44184adc/Mi8WfBinTool.java#L3817-L3899) reads `wfDef.json`'s `previewImg`, encodes it as the package preview, stores its offset in the main header at `0x20`, and writes the encoded preview into the BIN. The [Band 8 Watch Face Maker Info](https://www.mibandwatchfaces.com/mi_band8_watchface_maker/) specifies that `previewImg` must be 122×310 and present in the normal images. Together these sources support using 122×310 as a warning-only embedded-preview reference in the Band 8 profile.
+- [SOURCE] The same packer sets `faceCount = hasAod ? 2 : 1` ([Mi8WfBinTool.java, lines 3817–3844](https://github.com/zhy8388608/Mi8WfBinTool/blob/5e4195ce91b9d8810a7a2233c96b4cba44184adc/Mi8WfBinTool.java#L3817-L3844)). Therefore, two styles are not a universal file-format requirement: a package without AOD can declare one style.
+- Freeband's parser now requires at least one declared style. A count different from the Band 8 profile's two-style normal+AOD reference is reported as a compatibility warning and does not block import.
+- [NOT TESTED] Whether the tested Band 8 firmware accepts and renders a one-style/no-AOD package has not yet been verified on a physical band.
+- [SOURCE] The packer reads the embedded preview header and supports raw pixel, palette and LVGL RLE v1/v2 paths ([Mi8WfBinTool.java, lines 3540–3660](https://github.com/zhy8388608/Mi8WfBinTool/blob/5e4195ce91b9d8810a7a2233c96b4cba44184adc/Mi8WfBinTool.java#L3540-L3660)).
+- [SOURCE] The packer’s RLE v1 decoder (`Rle.decV10`, lines 330–353) uses a clear high bit for repeating the next pixel `n` times and a set high bit for `n` literal pixels. Its RLE v2 decoder (`Rle.decV20`, lines 379–394) uses byte-level runs: set high bit for `n` literal bytes, clear high bit for repeating the next byte `n` times ([Mi8WfBinTool.java](https://github.com/zhy8388608/Mi8WfBinTool/blob/5e4195ce91b9d8810a7a2233c96b4cba44184adc/Mi8WfBinTool.java#L330-L394)).
+- [SOURCE] Gadgetbridge’s `XiaomiBitmapUtils.java` is a separate implementation. In the archived GitHub mirror, its RLE v1 decoder uses the opposite control-bit polarity and `n+1` chunk counts; its RLE v2 decoder uses `n` chunks and supports a configurable chunk size ([XiaomiBitmapUtils.java, lines 177–295](https://github.com/Freeyourgadget/Gadgetbridge/blob/a0948ee1cbc2a870f91d313f8e37df5f524465f7/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiBitmapUtils.java#L177-L295)). Freeband intentionally follows the cited packer’s RLE representation, not Gadgetbridge’s v1 decoder. No Gadgetbridge decoder code was copied or translated.
+- Freeband’s RLE v1 implementation applies strict input bounds and exact decoded-length checks; its RLE v2 implementation handles the byte-oriented form used by the selected preview branch. Protocol fixtures cover RLE v1 repeat/literal records and RLE v2 repeat/literal records. Pixel-by-pixel parity with Gadgetbridge has not been established.
+- Preview decoding is optional: missing metadata, unsupported encoding or a dimension mismatch generates an advisory warning. It must never alter or reject an otherwise parseable BIN by itself.
+
 
 ## Research references for future, currently unimplemented profiles
 
@@ -76,13 +85,56 @@ For every future profile:
 3. Write byte-level protocol notes and cite exact source files/lines before implementation.
 4. Implement list, activate, delete, file validation, upload and result parsing in that profile only.
 5. Add synthetic protocol vectors and an independent reference checker.
-6. Keep the profile disabled until real-device list, activate, delete and upload tests pass; record model, firmware and date as [DIAGNOSTIC].
+6. Keep the profile disabled until real-device list, activate, delete and upload tests pass; record model, firmware and date as [MEASURED], with sanitized application diagnostic evidence.
 
 Do not copy or translate AGPL-licensed Gadgetbridge implementation code into Freeband. Use source code as protocol evidence, then implement independently from these notes.
 
+## Shared watch-face compatibility analysis
+
+The shared, read-only analyzer is `ios/Freeband/Band/WatchFaceCompatibility.swift`. It reads the embedded preview dimensions, attempts to decode the preview and returns only the values consumed by the import UI: preview size, decoded preview (if supported) and advisory warnings. It never changes the BIN and never blocks installation. The profile supplies device-specific reference values; shared parsing and decoding logic is not duplicated per device.
+
+Device-specific expectations belong to the existing `WatchFaceProfile` registry. The Band 8 profile currently supplies:
+- Embedded preview reference: **122×310**, derived from the Watch Face Maker's `previewImg` requirement and the packer's mapping of that image to the BIN's header preview offset.
+- A two-style reference for files declaring both normal and AOD content. [SOURCE] The referenced packer writes `faceCount = 2` when AOD content is present and `1` otherwise. This is an advisory comparison, not a universal BIN validity rule or proof that the band will render AOD correctly.
+
+Both checks are advisory. A preview-size mismatch, preview decode failure or a style count different from the normal+AOD reference is shown as a warning. The parser rejects a zero-style file as structurally invalid but permits one-style files; the packer source explicitly allows a one-style package when AOD content is absent.
+
+Evidence boundary:
+- [SOURCE] The [Mi Band 8 Watch Face Maker](https://www.mibandwatchfaces.com/mi_band8_watchface_maker/) Info section defines the 122×310 `previewImg` asset.
+- [SOURCE] [Mi8WfBinTool.java](https://github.com/zhy8388608/Mi8WfBinTool/blob/5e4195ce91b9d8810a7a2233c96b4cba44184adc/Mi8WfBinTool.java#L3836-L3897) maps the JSON `previewImg` asset into the BIN preview block referenced by the header.
+- [TESTED — superseded preliminary note] A later physical-device test batch reported that the tested Band 8 files matched the 122×310 reference and decoded previews, while the tested Band 10-origin files did not match the reference. The exact numeric dimensions for each file were not copied into this document, so this records the observed analyzer outcome rather than a per-file measurement table.
+- [DIAGNOSTIC] Static header comparison of the two uploaded reference samples (offline byte inspection, not a device-compatibility result):
+
+  | Sample | Size | Header signature | ID | Face count | Embedded preview offset |
+  |---|---:|---|---|---:|---:|
+  | Atatürk (Band 8 reference) | 379,168 bytes | `5A A5 34 12` | `167210065` | 2 | `0x00051EE4` (335,588) |
+  | CascadeDigitsConv (user-identified Band 10 test) | 2,572,224 bytes | `5A A5 34 12` | `167210065` | 2 | `0x00208534` (2,131,252) |
+
+  SHA-256: Atatürk `f7d2a60b47c4bc1eaa3b1f9cc4ad16cd2b52fa7e26ab514eacbecfed38a88a06`; Band 10 test `96c765a0a73eaa04ac789bc65820876e1a77681d929854f31526a5a07b2a6279`.
+- The two samples therefore share the same signature, reported ID and style count. None of those header values can distinguish their device origin. Their preview offsets differ, but an offset is only a location pointer, not a preview dimension.
+- The uploaded `band10_test3.bin` sample is **2,572,224 bytes**. The earlier physical diagnostic Case C records a **2,577,286-byte** payload; these are not the same byte-for-byte sample based on size alone and must remain separate test records unless their hashes are compared.
+- The earlier offline comparison above did not measure embedded width/height or pixel decoding. The later user-observed batch result is recorded separately below and must not be retroactively attributed to these two exact files without matching filenames or hashes.
+- A preview-size match or successful preview decode is not proof that the full face layout, widget coordinates, data sources or AOD are compatible. Those require separate structural analysis and physical-device validation.
+- Future device profiles supply their own optional reference values to the same analyzer. The metadata reader, image decoder and warning/report mechanism are shared rather than copied into each profile.
+
+
+## Latest compatibility-analysis check — Xiaomi Smart Band 8
+
+**[TESTED] User-observed physical-device test — 2026-11-23 (later test batch)**
+
+The user imported several different watch-face BIN files and checked the compatibility report and preview in the app.
+
+- Band 8-origin files tested in this batch: no compatibility warnings; embedded previews decoded and displayed.
+- Band 10-origin files tested in this batch: the report warned that the normal+AOD style reference was not met and that the embedded preview did not match the 122×310 reference.
+- These warnings did not block import, upload or activation. The user confirmed that the files could still be uploaded and activated.
+- This is evidence about the files tested in this batch only. It does not establish universal Band 8/Band 10 classification accuracy or guarantee correct on-band rendering.
+- The exact filenames, individual dimensions and file hashes for this later batch were not retained in the report. Do not merge these observations with the earlier named NewModLand, CascadeDigitsConv or 2.58 MB test records unless the samples are positively matched.
+
+**Status of older records:** The earlier diagnostic-backed transfer/install records below remain valid historical evidence for those specific test files and firmware. They describe upload, install and activation behavior, not the later compatibility analyzer's warning accuracy. Where older preliminary notes said preview dimensions had not been inspected, the later batch result supersedes that general statement, but does not supply exact measurements for the older named files.
+
 ## Real-device validation — Xiaomi Smart Band 8
 
-**[MEASURED] [DIAGNOSTIC] Physical-device test record — 2026-11-23**
+**[MEASURED] Physical-device test record — 2026-11-23**
 
 Device and connection context:
 - Device: Xiaomi Smart Band 8
@@ -90,35 +142,25 @@ Device and connection context:
 - Firmware reported by the device: `2.3.14`
 - Transport: FE95 BLE V1
 - Authentication completed successfully.
-- BLE writes were reported as 244-byte writes. The application-level upload chunks were 2,048 bytes.
+- BLE writes were reported as 244-byte writes. Application-level upload chunks were 2,048 bytes.
 
-The following operations were completed on the physical band using the profile-routed implementation. Results below are supported by the application's diagnostic records:
-
-| Operation | Observed result |
-|---|---|
-| Read installed watch-face list | Completed; list contained 7 entries in the initial activation test |
-| Activate an installed face | Positive device acknowledgement; operation completed |
-| Delete an installed face | Positive device acknowledgement; refreshed list contained 6 entries |
-| Install Atatürk BIN (user-identified Band 8 face; 379,168 bytes) | Prepare status 0; upload accepted with resume position 0; all 186 chunks acknowledged; final `Command{4,5}` result reported success for the requested ID; automatic activation acknowledged; refreshed list contained 7 entries |
-| Activate and delete additional installed faces | Completed with positive acknowledgements |
-| Install NewModLand BIN (user-identified Band 10-origin face; 361,181 bytes) | Prepare status 0; upload accepted with resume position 0; all 177 chunks acknowledged; final install result reported success; automatic activation acknowledged; refreshed list contained 7 entries |
+The following core operations were completed on the physical band using the profile-routed implementation:
+- Installed watch-face list request and parsing completed.
+- Activation of an installed face received a positive device acknowledgement.
+- Deletion of an inactive removable face received a positive device acknowledgement; the refreshed list decreased from seven entries to six.
+- The separate file-by-file install and rendering outcomes are recorded in Cases A–E below.
 
 **What this establishes**
-- The Band 8 profile routing works on the tested Band 8 firmware for list, activate, delete, install preparation, upload negotiation, chunk transfer, per-chunk acknowledgements, final install-result handling, automatic activation and list refresh.
-- The upload implementation waited for the device's final install result; completion was not inferred from a fixed delay.
-- The NewModLand result is a regression-compatibility observation: the user had previously installed this Band 10-origin face on the Band 8, and it continued to install. It does **not** establish that the file was designed for Band 8 or that Band 10 devices are supported by Freeband.
-
-**Open observation — duplicate embedded face ID**
-- Both the Atatürk and NewModLand test files were reported with the same face ID (`167210065`) in the diagnostic output.
-- This is consistent with the previously observed duplicate-ID behavior, but the available logs alone do not establish whether the ID is embedded identically in both files, produced by parsing, or affected by another part of the workflow.
-- Keep the existing duplicate-ID warning/guard. Do not infer source model or file identity from this ID alone. A byte-level comparison of the original BIN files is still needed.
+- The tested Band 8 profile can list, activate and delete faces on firmware 2.3.14.
+- The upload/install evidence is separated by source file in the comparative records below. A successful transfer or install response is not treated as proof of visual compatibility.
+- New device families remain unsupported until they have their own independently verified profile.
 
 **[NOT TESTED] Not yet verified**
 - Profile rejection and unsupported-state behavior on a different physical device.
 - Malformed or truncated BIN handling on-device.
 - Preview decoding accuracy against an independent decoder.
-- Whether a one-style/no-AOD Band 8 BIN is accepted by the tested firmware.
-- The duplicate-ID cause described above.
+- Whether a one-style/no-AOD Band 8 BIN is accepted and rendered by the tested firmware.
+- The cause of the duplicate face ID observed in the Atatürk and NewModLand diagnostic records.
 
 Diagnostic records were reviewed with sensitive authentication payloads and device-specific secrets excluded from this document. Do not publish raw authentication bytes, keys, MAC addresses or unredacted device identifiers in repository logs or PR discussions.
 
@@ -140,61 +182,13 @@ The user performed the following checks on the physical band:
 **Evidence scope:** This result is based on the user's direct observation and report. No separate diagnostic log was retained for this test, so it is classified as [TESTED], not [DIAGNOSTIC].
 
 
-## Large-file upload diagnostic excerpt — Band 10-origin BIN tested on Band 8
-
-**[MEASURED] [DIAGNOSTIC] Physical-device diagnostic excerpt — 2026-11-23**
-
-This is a sanitized excerpt of the retained diagnostic details supplied for the approximately 2.6 MB Band 10-origin watch-face file uploaded to a Xiaomi Smart Band 8. It is intentionally an excerpt, not a claim that the complete original log has been reproduced. Event wording below is retained where available; explanatory notes are marked as such.
-
-Device context:
-- Device: Xiaomi Smart Band 8
-- Model identifier: `M2239B1`
-- Firmware: `2.3.14`
-- Upload chunk size: 2,048 bytes
-- Total parts: 1,259
-- Final part: 902 bytes
-- Total payload represented by the part counts: 2,577,286 bytes
-
-Sanitized event sequence:
-
-```text
-[21:03:52] [upload] Part 1259/1259 acknowledged (902 bytes).
-[21:03:52] [upload] All watch-face data parts acknowledged; waiting for Command{4,5} install result.
-[21:03:52] [install] watch face install result: success (167210065); activating
-[21:03:52] [activate] Activation command sent for ID 167210065.
-[21:04:08] [activate] imported watch-face activation timed out
-[21:04:08] [connection] Channel released.
-[21:04:21] [connection] Reconnected; device M2239B1; firmware 2.3.14.
-[21:04:21] [watch-face-list] List contained 7 items.
-[21:04:21] [connection] Channel released.
-```
-
-Authentication data handling:
-```text
-[auth 1/2] request payload: *** [REDACTED]
-[auth 1/2] response payload: *** [REDACTED]
-[auth 2/2] request payload: *** [REDACTED]
-[auth 2/2] response payload: *** [REDACTED]
-```
-
-Interpretation:
-- All 1,259 upload parts were acknowledged, including the final 902-byte part.
-- The device then returned a successful install result for ID `167210065`.
-- The subsequent automatic activation timed out. Therefore, this log proves successful data transfer and a successful install-result response, but **does not prove that automatic activation completed**.
-- The reconnect reported a seven-item watch-face list. The count alone does not prove that this specific new face was present or active.
-- The install result repeated ID `167210065`, which had also appeared in earlier tests. This reinforces the duplicate-ID observation but does not identify its cause.
-
-Security note: authentication request/response bytes are represented by explicit redaction markers above. No authentication payload, key material, MAC address or unique device address is retained in this excerpt. The model identifier is retained because it identifies the product model, not an individual band.
-
-
-
 ## Comparative physical-device file tests — Xiaomi Smart Band 8
 
 The following cases are deliberately separated. A successful transfer/install response from the Band 8 does not mean that a file originating from another band family is visually compatible with the Band 8, nor does it establish support for that source device.
 
 ### Case A — Native Band 8 watch-face file (positive compatibility control)
 
-**[MEASURED] [DIAGNOSTIC] Physical-device test — 2026-11-23**
+**[MEASURED] Physical-device test — 2026-11-23**
 
 Test file:
 - User-identified as a Band 8 watch-face file (Atatürk face).
@@ -227,7 +221,7 @@ Evidence limitation:
 
 ### Case B — NewModLand, Band 10-origin file (cross-family compatibility test)
 
-**[MEASURED] [DIAGNOSTIC] Physical-device test — 2026-11-23**
+**[MEASURED] Physical-device test — 2026-11-23**
 
 Test file:
 - Name: NewModLand.
@@ -258,9 +252,14 @@ Interpretation:
 - It is **not** evidence of proper Band 8 visual compatibility, nor evidence that Freeband supports Band 10.
 - Treat it as a cross-family negative visual-compatibility test, not as a supported-file success.
 
+**Open observation — duplicate face ID**
+- The Atatürk Band 8 reference log and this NewModLand Band 10-origin log both report face ID `167210065`.
+- This ID must not be used as a device-family detector. The reason the two files share the reported ID has not been established.
+- A direct BIN/header comparison is still pending; no change to ID parsing is justified by this observation alone.
+
 ### Case C — Additional approximately 2.58 MB Band 10-origin file (large-file stress test)
 
-**[MEASURED] [DIAGNOSTIC] Physical-device test — 2026-11-23**
+**[MEASURED] Physical-device test — 2026-11-23**
 
 Test file:
 - Origin: user-identified Band 10 watch-face file; distinct from NewModLand.

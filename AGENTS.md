@@ -30,7 +30,7 @@ Instructions for coding agents (and people) changing this repository. The README
 
 ```sh
 # protocol vectors (V2, V1 and the local bind); needs python3 with `cryptography`. TZ=UTC: notify_cmd's expected time is UTC.
-cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
+cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
 
 # activity files: Swift against the fixtures and the Python reference, then the reference alone
 cd ios/tests/activity/swift && swiftc ../../../Freeband/Band/ActivityFiles.swift main.swift -o /tmp/act && /tmp/act

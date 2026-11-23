@@ -177,8 +177,9 @@ struct MiV1Channel {
         var body = message
         var ctr: UInt16?
         if encrypts, let cipher {
-            ctr = incrementNonce ? counter : 0
-            body = cipher.encrypt(message, counter: ctr!)
+            let nonceCounter = incrementNonce ? counter : 0
+            ctr = nonceCounter
+            body = cipher.encrypt(message, counter: nonceCounter)
             if incrementNonce { counter &+= 1 }
         }
         if body.count + 6 <= writeSize {
@@ -188,7 +189,13 @@ struct MiV1Channel {
             inFlight = .single
             out.writes.append(write)
         } else {
-            let whole = ((ctr != nil && incrementNonce) ? [UInt8](Self.u16(Int(ctr!))) : []) + [UInt8](body)
+            let counterPrefix: [UInt8]
+            if incrementNonce, let ctr {
+                counterPrefix = [UInt8](Self.u16(Int(ctr)))
+            } else {
+                counterPrefix = []
+            }
+            let whole = counterPrefix + [UInt8](body)
             let sliceSize = writeSize - 2
             let count = (whole.count + sliceSize - 1) / sliceSize
             inFlight = .chunked(body: whole, sliceSize: sliceSize)

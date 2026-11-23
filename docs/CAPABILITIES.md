@@ -689,7 +689,8 @@ Tür kodları [KOD] `X/services/XiaomiDataUploadService.java:47-50`, [AB] `ABC/d
 - **Beyan:** statik (`supportsWatchfaceManagement`) [KOD] `XD/XiaomiCoordinator.java:275-292`. Band 10 / 10 Pro için önizleme boyutu tanımlı değil; ekran 212 × 520 / 336 × 480.
 - **iOS:**
   - **Liste + aktif kadranı değiştirme + silme:** kısa oturum, dosya aktarımı yok. Hızlı kazanım.
-  - **Yükleme:** 13.1 altyapısı, kullanıcı `.bin`/`.mwz` dosyasını Dosyalar'dan seçer (`UIDocumentPickerViewController`). Kadran kaynağı ve telif kullanıcıya ait. Yanlış model için yapılmış kadranı bantın reddetmesi beklenir (`code 0`) [TAHMİN].
+  - **Yükleme:** 13.1 altyapısı, kullanıcı `.bin` dosyasını Dosyalar'dan seçer (`UIDocumentPickerViewController`). `.mwz` paketini açma/işleme Freeband'de henüz uygulanmadı. Kadran kaynağı ve telif kullanıcıya ait.
+  - **[MEASURED] Çapraz model testi:** Band 8 (M2239B1, firmware 2.3.14) üzerinde kullanıcı tarafından Band 10 kaynaklı olduğu belirtilen iki BIN denendi. İkisinde de veri parçaları onaylandı ve cihaz başarılı kurulum sonucu döndürdü; NewModLand otomatik etkinleştirildi, 2,58 MB dosyanın etkinleştirilmesi zaman aşımına uğradı. Band 8 ekranında görülen yerleşim, bazı veri alanları ve AOD doğru değildi. Ayrıntılar [WATCH-FACES.md, Cases B–C](WATCH-FACES.md#comparative-physical-device-file-tests--xiaomi-smart-band-8). Bu nedenle bantın başka model için hazırlanmış her dosyayı `code 0` ile reddedeceği varsayılmamalı; ön analiz ve fiziksel doğrulama gerekir.
 - **Efor / risk:** liste/değiştir/sil S / düşük; yükleme M (13.1'in üstüne) / orta.
 
 ### 13.3 Hızlı uygulamalar (RPK)

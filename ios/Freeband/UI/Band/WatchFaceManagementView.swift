@@ -14,7 +14,7 @@ struct WatchFaceManagementView: View {
     @State private var didAutoLoad = false
     @State private var showingImporter = false
     @State private var importedFace: ImportedWatchFace?
-    @State private var importedPreview: MiWatchFacePreview?
+    @State private var compatibilityReport: WatchFaceCompatibilityReport?
     @State private var showingInstallConfirmation = false
     @State private var importError: String?
 
@@ -24,6 +24,12 @@ struct WatchFaceManagementView: View {
         return false
     }
     private var isLoading: Bool { isBusy && (link.purpose == .watchFaces || isInstalling) }
+    private var watchFaceProfile: WatchFaceProfile? {
+        WatchFaceProfile.resolve(
+            isBand8: Band.family(name: band.name, model: band.model) == .band8
+        )
+    }
+
     private var matchingInstalledFace: WatchFace? {
         guard let importedFace else { return nil }
         return link.watchFaces.first(where: { $0.id == importedFace.id })
@@ -31,7 +37,7 @@ struct WatchFaceManagementView: View {
 
     var body: some View {
         List {
-            if WatchFaceProfile.resolve(name: band.name, model: band.model) == nil {
+            if watchFaceProfile == nil {
                 Section {
                     Label(String(localized: "Watch-face management is not yet supported for this device."), systemImage: "hourglass")
                         .foregroundStyle(.secondary)
@@ -87,7 +93,7 @@ struct WatchFaceManagementView: View {
 
                 if let importedFace {
                     VStack(alignment: .leading, spacing: 10) {
-                        if let preview = importedPreview, let previewImage = makePreviewImage(preview) {
+                        if let preview = compatibilityReport?.preview, let previewImage = makePreviewImage(preview) {
                             Image(uiImage: previewImage)
                                 .resizable()
                                 .scaledToFit()
@@ -104,9 +110,38 @@ struct WatchFaceManagementView: View {
                         Text("ID: \(importedFace.id)")
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
-                        Text("\(String(localized: "Mi Band 8 watch-face file")) · \(importedFace.data.count) bayt")
+                        Text("\(String(localized: "Xiaomi watch-face file")) · \(importedFace.data.count) \(String(localized: "bytes"))")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        if let previewSummary = compatibilityReport?.previewSummary {
+                            Text(previewSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if compatibilityReport != nil {
+                            Text(String(localized: "These checks cover preview metadata and style count only. They do not verify widget layout, data sources or AOD rendering on the band."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let report = compatibilityReport, report.hasWarnings {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label(String(localized: "Potential compatibility issue"),
+                                      systemImage: "exclamationmark.triangle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                ForEach(report.warnings) { warning in
+                                    Text(warning.message)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(String(localized: "This check is advisory only. You can still continue with installation."))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        }
                         if matchingInstalledFace != nil {
                             Label(String(localized: "A watch face with this ID is already installed"), systemImage: "exclamationmark.triangle.fill")
                                 .font(.subheadline.weight(.semibold))
@@ -130,7 +165,7 @@ struct WatchFaceManagementView: View {
             } header: {
                 Text(String(localized: "Import a watch face"))
             } footer: {
-                Text(String(localized: "Only Mi Band 8 binary watch faces with both the normal and always-on styles are accepted. Keep the band charged and close Mi Fitness during installation."))
+                Text(String(localized: "Files with a recognized Xiaomi watch-face signature and ID can be imported. Compatibility warnings are advisory and do not block installation. Keep the band charged and close Mi Fitness during installation."))
             }
             }
         }
@@ -139,7 +174,7 @@ struct WatchFaceManagementView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
-            if WatchFaceProfile.resolve(name: band.name, model: band.model) != nil {
+            if watchFaceProfile != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: refresh) {
                         Image(systemName: "arrow.clockwise")
@@ -150,7 +185,7 @@ struct WatchFaceManagementView: View {
             }
         }
         .task {
-            guard WatchFaceProfile.resolve(name: band.name, model: band.model) != nil,
+            guard watchFaceProfile != nil,
                   !didAutoLoad else { return }
             didAutoLoad = true
             if link.watchFaces.isEmpty && !isBusy { refresh() }
@@ -166,11 +201,12 @@ struct WatchFaceManagementView: View {
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                 let data = try Data(contentsOf: url)
-                importedFace = try WatchFaceProfile.resolve(name: band.name, model: band.model)?.parseFile(data)
-                importedPreview = WatchFaceProfile.resolve(name: band.name, model: band.model)?.preview(data)
+                let profile = watchFaceProfile
+                importedFace = try profile?.parseFile(data)
+                compatibilityReport = importedFace.flatMap { profile?.analyze($0) }
             } catch {
                 importedFace = nil
-                importedPreview = nil
+                compatibilityReport = nil
                 importError = error.localizedDescription
             }
         }

@@ -341,7 +341,9 @@ final class BandLink: NSObject, ObservableObject {
     func start(_ target: BandTarget, purpose: Purpose) {
         guard !phase.isBusy, purpose != .hold else { return }
         if purpose.isWatchFaceOperation,
-           WatchFaceProfile.resolve(name: target.name, model: target.model) == nil {
+           WatchFaceProfile.resolve(
+               isBand8: Band.family(name: target.name, model: target.model) == .band8
+           ) == nil {
             note("watch-face management unavailable: no tested profile for \(target.name)")
             stage = .failed(String(localized: "Watch-face management is not yet supported for this device."))
             return
@@ -659,7 +661,9 @@ final class BandLink: NSObject, ObservableObject {
         // Resolve against the name of the peripheral that actually authenticated, not only
         // the saved display label. The saved name is a fallback for devices that omit it.
         let detectedName = peripheral?.name ?? target?.name ?? ""
-        watchFaceProfile = WatchFaceProfile.resolve(name: detectedName, model: target?.model)
+        watchFaceProfile = WatchFaceProfile.resolve(
+            isBand8: Band.family(name: detectedName, model: target?.model) == .band8
+        )
         if purpose.isWatchFaceOperation, watchFaceProfile == nil {
             note("watch-face management unavailable: authenticated device has no tested profile")
             fail(.notRead)
@@ -714,7 +718,7 @@ final class BandLink: NSObject, ObservableObject {
             }
             return
         }
-        if case .watchFaceInstall(let id, let name, let data) = purpose {
+        if case .watchFaceInstall(let id, _, _) = purpose {
             stage = .reading
             watchFaceUploadID = id
             guard v1Characteristics[Self.v1Upload] != nil else {

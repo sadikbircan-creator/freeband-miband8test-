@@ -86,9 +86,9 @@ enum MiWatchFaceUpload {
             throw ParseFailure.invalidMagic
         }
         let faceCount = Int(bytes[0x1C]) | (Int(bytes[0x1D]) << 8)
-        // Band 8 profile assumption: accepted files contain normal and always-on styles.
-        // This is not a universal Xiaomi watch-face rule; future profiles must define their own policy.
-        guard faceCount == 2 else { throw ParseFailure.missingAlwaysOnFace(faceCount) }
+        // At least one style must be declared. One-style/no-AOD packages are a compatibility
+        // warning, not a parse rejection; different profiles can define their own expectation.
+        guard faceCount > 0 else { throw ParseFailure.invalidFaceCount }
 
         func headerString(_ range: Range<Int>) -> String? {
             let raw = Data(bytes[range])
@@ -97,7 +97,11 @@ enum MiWatchFaceUpload {
             return String(data: Data(trimmed), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         // Read the decimal ID up to its NUL terminator, bounded to the header region before the name.
-        let idBytes = bytes[0x28..<0x68].prefix { $0 != 0 }
+        let idRegion = bytes[0x28..<0x68]
+        guard let idTerminator = idRegion.firstIndex(of: 0) else {
+            throw ParseFailure.invalidID
+        }
+        let idBytes = idRegion[..<idTerminator]
         guard !idBytes.isEmpty, idBytes.allSatisfy({ $0 >= 48 && $0 <= 57 }),
               let id = String(data: Data(idBytes), encoding: .ascii) else {
             throw ParseFailure.invalidID
@@ -112,7 +116,7 @@ enum MiWatchFaceUpload {
         case fileTooLarge
         case invalidMagic
         case invalidID
-        case missingAlwaysOnFace(Int)
+        case invalidFaceCount
 
         var errorDescription: String? {
             switch self {
@@ -120,12 +124,13 @@ enum MiWatchFaceUpload {
             case .fileTooLarge: return "The watch-face file is larger than the 16 MB safety limit."
             case .invalidMagic: return "This file does not have a recognized Xiaomi watch-face signature."
             case .invalidID: return "The watch-face ID in the file is missing or invalid."
-            case .missingAlwaysOnFace(let count):
-                return "This file contains \(count) face style(s). Mi Band 8 requires both the normal and always-on styles."
+            case .invalidFaceCount:
+                return String(localized: "This file does not declare any watch-face styles.")
             }
         }
     }
 
+    // Mi Band's watch-face upload request requires MD5; retain it for protocol compatibility.
     static func md5(_ data: Data) -> Data {
         var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
         data.withUnsafeBytes { bytes in

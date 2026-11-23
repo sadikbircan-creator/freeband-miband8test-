@@ -6989,16 +6989,6 @@
         }
       }
     },
-    "Custom watch-face file upload is not available yet for the Mi Band 8 transport.": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mi Band 8 aktarım altyapısı için özel kadran dosyası yükleme henüz kullanılamıyor."
-          }
-        }
-      }
-    },
     "Refresh watch faces": {
       "localizations": {
         "tr": {
@@ -7089,16 +7079,6 @@
         }
       }
     },
-    "Mi Band 8 watch-face file": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mi Band 8 kadran dosyası"
-          }
-        }
-      }
-    },
     "Install and activate": {
       "localizations": {
         "tr": {
@@ -7109,32 +7089,12 @@
         }
       }
     },
-    "Install and activate this watch face?": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bu kadran yüklensin ve etkinleştirilsin mi?"
-          }
-        }
-      }
-    },
     "Install": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Yükle"
-          }
-        }
-      }
-    },
-    "This writes a binary watch-face file to your Mi Band 8 and then activates it. An incompatible file may cause problems with the band.": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bu işlem bir kadran dosyasını Mi Band 8'e yükler ve ardından etkinleştirir. Uyumsuz bir dosya bileklikte sorunlara yol açabilir."
           }
         }
       }
@@ -7169,42 +7129,12 @@
         }
       }
     },
-    "Only Mi Band 8 binary watch faces with both the normal and always-on styles are accepted. Keep the band charged and close Mi Fitness during installation.": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Yalnızca normal ve sürekli açık ekran stillerini içeren Mi Band 8 kadran dosyaları kabul edilir. Yükleme sırasında bilekliği şarjlı tutun ve Mi Fitness'ı kapatın."
-          }
-        }
-      }
-    },
     "Watch face": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Kadran"
-          }
-        }
-      }
-    },
-    "Install and replace matching watch face?": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aynı kimliğe sahip kadran varsa değiştirilerek yüklensin mi?"
-          }
-        }
-      }
-    },
-    "Freeband checks the band for this ID first. If a matching inactive custom face exists, it is deleted before this file is installed. Active or non-removable faces are not deleted.": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Freeband önce saatte bu kimliği kontrol eder. Aynı kimliğe sahip etkin olmayan özel bir kadran varsa yeni dosya yüklenmeden önce silinir. Etkin veya silinemeyen kadranlar silinmez."
           }
         }
       }
@@ -7255,6 +7185,176 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yükleme öncesinde saat yeniden kontrol edilir. Aynı kimlikli bir kadran varsa önce elle silinmelidir."
+          }
+        }
+      }
+    },
+    "Potential compatibility issue": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Olası uyumluluk sorunu"
+          }
+        }
+      }
+    },
+    "The embedded preview information could not be read. Compatibility cannot be confirmed.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gömülü önizleme bilgileri okunamadı. Uyumluluk doğrulanamıyor."
+          }
+        }
+      }
+    },
+    "Freeband could not decode the embedded preview. The BIN may still be usable.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freeband gömülü önizlemeyi çözemedi. BIN dosyası yine de kullanılabilir olabilir."
+          }
+        }
+      }
+    },
+    "Embedded preview size": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gömülü önizleme boyutu"
+          }
+        }
+      }
+    },
+    "This check is advisory only. You can still continue with installation.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu kontrol yalnızca bilgilendirme amaçlıdır. Yüklemeye devam edebilirsiniz."
+          }
+        }
+      }
+    },
+    "Files with a recognized Xiaomi watch-face signature and ID can be imported. Compatibility warnings are advisory and do not block installation. Keep the band charged and close Mi Fitness during installation.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xiaomi kadran imzası ve kimliği tanınan dosyalar içe aktarılabilir. Uyumluluk uyarıları bilgilendirme amaçlıdır ve yüklemeyi engellemez. Yükleme sırasında bandın şarjlı olduğundan emin olun ve Mi Fitness'ı kapatın."
+          }
+        }
+      }
+    },
+    "This file does not declare any watch-face styles.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu kadran dosyasında herhangi bir stil tanımlanmamış."
+          }
+        }
+      }
+    },
+    "bytes": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bayt"
+          }
+        }
+      }
+    },
+    "The embedded preview dimensions differ from %@. The file may have been created for another display.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gömülü önizleme boyutları %@ değerinden farklı. Dosya başka bir ekran için hazırlanmış olabilir."
+          }
+        }
+      }
+    },
+    "This file does not contain the expected %@. Its always-on screen may be missing or different.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu dosyada beklenen %@ bulunmuyor. Sürekli açık ekran eksik olabilir veya farklı görünebilir."
+          }
+        }
+      }
+    },
+    "122 × 310 Band 8 editor reference": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Band 8 düzenleyicisinin 122 × 310 referansı"
+          }
+        }
+      }
+    },
+    "normal and AOD styles": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "normal ve AOD stilleri"
+          }
+        }
+      }
+    },
+    "These checks cover preview metadata and style count only. They do not verify widget layout, data sources or AOD rendering on the band.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu kontroller yalnızca önizleme bilgilerini ve stil sayısını inceler. Bileşen yerleşimini, veri kaynaklarını veya bandın AOD görüntüsünü doğrulamaz."
+          }
+        }
+      }
+    },
+    "Xiaomi watch-face file": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xiaomi kadran dosyası"
+          }
+        }
+      }
+    },
+    "Watch-face management is not yet supported for this device.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu cihazda kadran yönetimi henüz desteklenmiyor."
+          }
+        }
+      }
+    },
+    "A tested watch-face profile is not available for this band yet.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu bileklik için henüz doğrulanmış bir kadran profili bulunmuyor."
+          }
+        }
+      }
+    },
+    "Work in progress": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geliştirme aşamasında"
           }
         }
       }
