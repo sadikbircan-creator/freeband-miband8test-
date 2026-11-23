@@ -107,6 +107,8 @@ final class BandLink: NSObject, ObservableObject {
         case channelUnavailable
         /// Turning on notifications (005E, or the V1 characteristics) failed.
         case channelRefused
+        /// The band reported an in-progress upload; Freeband refuses to resume partial data.
+        case watchFaceResumeUnsupported
         /// The session ended (stopped) before the band was read.
         case notRead
 
@@ -124,6 +126,7 @@ final class BandLink: NSObject, ObservableObject {
             case .connectFailed: return "connect_failed"
             case .channelUnavailable: return "channel_unavailable"
             case .channelRefused: return "channel_refused"
+            case .watchFaceResumeUnsupported: return "watch_face_resume_unsupported"
             case .notRead: return "not_read"
             }
         }
@@ -142,6 +145,8 @@ final class BandLink: NSObject, ObservableObject {
             case .connectFailed: return String(localized: "Couldn't connect to the band. Turn Bluetooth off and on, then try again.")
             case .channelUnavailable: return String(localized: "This band doesn't offer the Bluetooth channel Freeband uses.")
             case .channelRefused: return String(localized: "The band didn't open its data channel. Try again.")
+            case .watchFaceResumeUnsupported:
+                return String(localized: "The band reported a partial upload. Freeband won't resume it. Start a new installation attempt from the beginning.")
             case .notRead: return String(localized: "Couldn't read the band.")
             }
         }
@@ -950,6 +955,11 @@ final class BandLink: NSObject, ObservableObject {
             }
             let resume = Int(resumeRaw)
             let chunkSize = Int(chunkSizeRaw)
+            guard resume == 0 else {
+                note("← upload requested a nonzero resume offset ((resume)); refusing partial resume. A new installation attempt must start again at Command{4,4}.")
+                fail(.watchFaceResumeUnsupported)
+                return
+            }
             do {
                 watchFaceUploadParts = try watchFaceProfile?.parts(file: data, chunkSize: chunkSize, resumePosition: resume) ?? []
                 watchFaceUploadIndex = 0
