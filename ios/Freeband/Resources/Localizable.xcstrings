@@ -7358,6 +7358,16 @@
           }
         }
       }
+    },
+    "The band reported a partial upload. Freeband won't resume it. Start a new installation attempt from the beginning.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bileklik kısmi bir yükleme bildirdi. Freeband bu yüklemeyi kaldığı yerden sürdürmeyecek. Baştan başlamak için yüklemeyi yeniden deneyin."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
