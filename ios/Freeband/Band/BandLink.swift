@@ -1034,7 +1034,10 @@ final class BandLink: NSObject, ObservableObject {
             }
 
         case (4, 1):
-            guard isSettingWatchFace || isInstallingWatchFace else { return }
+            guard isSettingWatchFace || isInstallingWatchFace else {
+                note("← 4/1 watch-face status received outside a watch-face operation")
+                return
+            }
             guard watchFaceActivationPending else {
                 note("← late watch face activation acknowledgement ignored during inventory reconciliation")
                 return
