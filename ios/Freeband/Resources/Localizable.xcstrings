@@ -6949,16 +6949,6 @@
         }
       }
     },
-    "No watch faces loaded": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kadran listesi alınamadı"
-          }
-        }
-      }
-    },
     "Tap refresh to read the watch faces installed on your band.": {
       "localizations": {
         "tr": {
@@ -6975,16 +6965,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Saatte yüklü kadranlar"
-          }
-        }
-      }
-    },
-    "Close Mi Fitness before managing watch faces. Only custom inactive faces can be deleted.": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kadranları yönetmeden önce Mi Fitness'ı kapatın. Yalnızca etkin olmayan özel kadranlar silinebilir."
           }
         }
       }
@@ -7425,6 +7405,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bileklik tanınmayan bir kadran yükleme sonucu döndürdü. Ayrıntılar için Tanılama bölümüne bakın."
+          }
+        }
+      }
+    },
+    "Imported watch face": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İçe aktarılan kadran"
+          }
+        }
+      }
+    },
+    "The file is shorter than a Mi Band 8 watch-face header.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosya, Mi Band 8 kadran başlığından daha kısa."
+          }
+        }
+      }
+    },
+    "The watch-face file is larger than the 16 MB safety limit.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kadran dosyası 16 MB güvenlik sınırını aşıyor."
+          }
+        }
+      }
+    },
+    "This file does not have a recognized Xiaomi watch-face signature.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu dosyada tanınan bir Xiaomi kadran imzası bulunmuyor."
+          }
+        }
+      }
+    },
+    "The watch-face ID in the file is missing or invalid.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosyadaki kadran kimliği eksik veya geçersiz."
+          }
+        }
+      }
+    },
+    "No watch faces installed": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yüklü kadran bulunamadı"
+          }
+        }
+      }
+    },
+    "Close Mi Fitness before managing watch faces. Only faces the band marks as deletable can be deleted, and active faces cannot be deleted.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kadranları yönetmeden önce Mi Fitness'ı kapatın. Yalnızca bilekliğin silinebilir olarak işaretlediği etkin olmayan kadranlar silinebilir."
           }
         }
       }
