@@ -304,6 +304,10 @@ final class BandLink: NSObject, ObservableObject {
     /// V1: the three characteristics, and one MiV1Channel each, by UUID.
     private var v1Characteristics: [CBUUID: CBCharacteristic] = [:]
     private var v1Channels: [CBUUID: MiV1Channel] = [:]
+    /// V1 command messages for watch-face operations: transport ACK handlers and in-flight watchdogs.
+    private var nextV1CommandAcknowledgementToken: UInt64 = 0
+    private var v1CommandAcknowledgementHandlers: [UInt64: (Bool) -> Void] = [:]
+    private var v1CommandPendingAcknowledgements: Set<UInt64> = []
     /// V1: the latest missing-slice timer per characteristic; `sliceTimerSerial` never resets, so a
     /// timer from before a reconnect never matches.
     private var sliceTimers: [CBUUID: Int] = [:]
@@ -348,6 +352,8 @@ final class BandLink: NSObject, ObservableObject {
     private var watchFaceUploadID: String?
     private var watchFaceInstallPrepared = false
     private var watchFaceActivationAcknowledged = false
+    private var watchFaceActivationPending = false
+    private var watchFaceDeletionPending = false
     /// Recheck the band's inventory immediately before upload to prevent duplicate IDs.
     private var watchFacePreflightPending = false
     /// The command being handled, so a reply nobody handles can be logged with its bytes.
@@ -463,6 +469,8 @@ final class BandLink: NSObject, ObservableObject {
         watchFaceUploadID = nil
         watchFaceInstallPrepared = false
         watchFaceActivationAcknowledged = false
+        watchFaceActivationPending = false
+        watchFaceDeletionPending = false
         watchFacePreflightPending = false
         if purpose == .watchFaces { watchFaces = [] }
         active = true
@@ -684,6 +692,9 @@ final class BandLink: NSObject, ObservableObject {
 
     private func didAuthenticate() {
         authed = true
+        // Authentication resets the V1 channel's pre-auth queue; its old tokens are no longer live.
+        v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandPendingAcknowledgements.removeAll()
         // Resolve against the name of the peripheral that actually authenticated, not only
         // the saved display label. The saved name is a fallback for devices that omit it.
         let detectedName = peripheral?.name ?? target?.name ?? ""
@@ -722,26 +733,25 @@ final class BandLink: NSObject, ObservableObject {
             watchFaces = []
             watchFaceListRefreshPending = false
             note("→ watch face list")
-            sendCommand(watchFaceProfile?.listCommand() ?? Data(), encrypted: true)
-            let thisRun = run
-            after(12, thisRun) { [weak self] in
-                guard let self, self.active, self.purpose == .watchFaces else { return }
-                self.note("watch face list timed out")
-                self.fail(.timeout)
-            }
+            sendWatchFaceCommand(
+                watchFaceProfile?.listCommand() ?? Data(),
+                responseTimeout: 12,
+                timeoutMessage: "watch face list timed out",
+                while: { $0.purpose == .watchFaces }
+            )
             return
         }
         if case .watchFaceSet(let id) = purpose {
             stage = .reading
             watchFaceListRefreshPending = true
+            watchFaceActivationPending = true
             note("→ activate watch face \(id)")
-            sendCommand(watchFaceProfile?.setCommand(id: id) ?? Data(), encrypted: true)
-            let thisRun = run
-            after(12, thisRun) { [weak self] in
-                guard let self, self.active, self.purpose == .watchFaceSet(id) else { return }
-                self.note("watch face activation timed out")
-                self.fail(.timeout)
-            }
+            sendWatchFaceCommand(
+                watchFaceProfile?.setCommand(id: id) ?? Data(),
+                responseTimeout: 12,
+                timeoutMessage: "watch face activation timed out",
+                while: { $0.purpose == .watchFaceSet(id) && $0.watchFaceActivationPending }
+            )
             return
         }
         if case .watchFaceInstall(let id, _, _) = purpose {
@@ -756,26 +766,25 @@ final class BandLink: NSObject, ObservableObject {
             // never delete an existing watch face automatically.
             watchFacePreflightPending = true
             note("→ check installed watch faces for duplicate ID \(id)")
-            sendCommand(watchFaceProfile?.listCommand() ?? Data(), encrypted: true)
-            let thisRun = run
-            after(12, thisRun) { [weak self] in
-                guard let self, self.active, self.isInstallingWatchFace, self.watchFacePreflightPending else { return }
-                self.note("watch-face duplicate check timed out")
-                self.fail(.timeout)
-            }
+            sendWatchFaceCommand(
+                watchFaceProfile?.listCommand() ?? Data(),
+                responseTimeout: 12,
+                timeoutMessage: "watch-face duplicate check timed out",
+                while: { $0.isInstallingWatchFace && $0.watchFacePreflightPending }
+            )
             return
         }
         if case .watchFaceDelete(let id) = purpose {
             stage = .reading
             watchFaceListRefreshPending = true
+            watchFaceDeletionPending = true
             note("→ delete watch face \(id)")
-            sendCommand(watchFaceProfile?.deleteCommand(id: id) ?? Data(), encrypted: true)
-            let thisRun = run
-            after(12, thisRun) { [weak self] in
-                guard let self, self.active, self.purpose == .watchFaceDelete(id) else { return }
-                self.note("watch face deletion timed out")
-                self.fail(.timeout)
-            }
+            sendWatchFaceCommand(
+                watchFaceProfile?.deleteCommand(id: id) ?? Data(),
+                responseTimeout: 12,
+                timeoutMessage: "watch face deletion timed out",
+                while: { $0.purpose == .watchFaceDelete(id) && $0.watchFaceDeletionPending }
+            )
             return
         }
         stage = purpose == .live ? .live : .reading
@@ -816,13 +825,12 @@ final class BandLink: NSObject, ObservableObject {
               case .watchFaceInstall(let id, let name, let data) = purpose else { return }
         watchFaceUploadID = id
         note("→ prepare watch face install: \(name), \(data.count) bytes")
-        sendCommand(watchFaceProfile?.installCommand(faceID: id, size: data.count) ?? Data(), encrypted: true)
-        let thisRun = run
-        after(20, thisRun) { [weak self] in
-            guard let self, self.active, self.isInstallingWatchFace, !self.watchFaceInstallPrepared else { return }
-            self.note("watch face install preparation timed out")
-            self.fail(.timeout)
-        }
+        sendWatchFaceCommand(
+            watchFaceProfile?.installCommand(faceID: id, size: data.count) ?? Data(),
+            responseTimeout: 20,
+            timeoutMessage: "watch face install preparation timed out",
+            while: { $0.isInstallingWatchFace && !$0.watchFaceInstallPrepared }
+        )
     }
 
     private func handle(_ command: PBMessage) {
@@ -942,13 +950,12 @@ final class BandLink: NSObject, ObservableObject {
             guard case .watchFaceInstall(_, _, let data) = purpose else { return }
             let request = watchFaceProfile?.uploadRequest(size: data.count, md5: watchFaceProfile?.md5(data) ?? Data()) ?? Data()
             note("→ request watch-face data upload")
-            sendCommand(request, encrypted: true)
-            let thisRun = run
-            after(20, thisRun) { [weak self] in
-                guard let self, self.active, self.isInstallingWatchFace, self.watchFaceUploadParts.isEmpty else { return }
-                self.note("watch-face upload negotiation timed out")
-                self.fail(.timeout)
-            }
+            sendWatchFaceCommand(
+                request,
+                responseTimeout: 20,
+                timeoutMessage: "watch-face upload negotiation timed out",
+                while: { $0.isInstallingWatchFace && $0.watchFaceUploadParts.isEmpty }
+            )
 
         case (22, 0) where isInstallingWatchFace:
             guard let ack = command.message(24)?.message(2) else {
@@ -1021,18 +1028,16 @@ final class BandLink: NSObject, ObservableObject {
                 return
             }
             note("← watch face activation acknowledgement: \(accepted ? "true" : "false")")
+            watchFaceActivationPending = false
             if accepted, (isInstallingWatchFace || isSettingWatchFace) {
                 if isInstallingWatchFace { watchFaceActivationAcknowledged = true }
                 watchFaceListRefreshPending = true
-                sendCommand(watchFaceProfile?.listCommand() ?? Data(), encrypted: true)
-                if isInstallingWatchFace {
-                    let thisRun = run
-                    after(12, thisRun) { [weak self] in
-                        guard let self, self.active, self.isInstallingWatchFace, self.watchFaceListRefreshPending else { return }
-                        self.note("installed watch-face list refresh timed out")
-                        self.fail(.timeout)
-                    }
-                }
+                sendWatchFaceCommand(
+                    watchFaceProfile?.listCommand() ?? Data(),
+                    responseTimeout: 12,
+                    timeoutMessage: "installed watch-face list refresh timed out",
+                    while: { $0.watchFaceListRefreshPending && ($0.isInstallingWatchFace || $0.isSettingWatchFace) }
+                )
             } else if isSettingWatchFace || isInstallingWatchFace {
                 watchFaceListRefreshPending = false
                 note("watch face activation was refused by the band")
@@ -1046,9 +1051,15 @@ final class BandLink: NSObject, ObservableObject {
                 return
             }
             note("← watch face deletion acknowledgement: \(accepted ? "true" : "false")")
+            watchFaceDeletionPending = false
             if accepted, case .watchFaceDelete(_) = purpose {
                 watchFaceListRefreshPending = true
-                sendCommand(watchFaceProfile?.listCommand() ?? Data(), encrypted: true)
+                sendWatchFaceCommand(
+                    watchFaceProfile?.listCommand() ?? Data(),
+                    responseTimeout: 12,
+                    timeoutMessage: "deleted watch-face list refresh timed out",
+                    while: { $0.watchFaceListRefreshPending && $0.purpose.isWatchFaceOperation }
+                )
             } else if case .watchFaceDelete(_) = purpose {
                 watchFaceListRefreshPending = false
                 note("watch face deletion was refused by the band")
@@ -1352,6 +1363,8 @@ final class BandLink: NSObject, ObservableObject {
         for characteristic in subscribed where characteristic.isNotifying {
             p.setNotifyValue(false, for: characteristic)
         }
+        v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandPendingAcknowledgements.removeAll()
     }
 
     /// Forgets everything tied to one connection: characteristics, framing state, session keys.
@@ -1368,15 +1381,56 @@ final class BandLink: NSObject, ObservableObject {
         v1Characteristics = [:]
         v1Channels = [:]
         sliceTimers = [:]
+        v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandPendingAcknowledgements.removeAll()
     }
 
     // MARK: frames
 
-    private func sendCommand(_ protobuf: Data, encrypted: Bool) {
+    /// A watch-face response timeout starts only after the corresponding V1 command has been
+    /// accepted by the band at the transport layer, not while it is waiting behind earlier commands.
+    private func sendWatchFaceCommand(
+        _ protobuf: Data,
+        responseTimeout: TimeInterval,
+        timeoutMessage: String,
+        while shouldTimeout: @escaping (BandLink) -> Bool
+    ) {
+        let thisRun = run
+        sendCommand(protobuf, encrypted: true) { [weak self] accepted in
+            guard let self, self.active, self.run == thisRun else { return }
+            guard accepted else {
+                self.note("watch-face command was refused by the V1 transport")
+                self.fail(.notRead)
+                return
+            }
+            self.after(responseTimeout, thisRun) { [weak self] in
+                guard let self, self.active, shouldTimeout(self) else { return }
+                self.note(timeoutMessage)
+                self.fail(.timeout)
+            }
+        }
+    }
+
+    private func sendCommand(
+        _ protobuf: Data,
+        encrypted: Bool,
+        onV1TransportAcknowledged: ((Bool) -> Void)? = nil
+    ) {
         if transport == .v1 {
-            // The V1 channel encrypts once the watch has accepted the login, which is exactly when
-            // callers pass `encrypted: true`.
-            v1Step(Self.v1CommandWrite) { $0.send(protobuf) }
+            // Tag every command-channel message during watch-face operations. Its response timer
+            // starts on the transport ACK; a separate watchdog covers a message once it leaves
+            // the per-characteristic queue.
+            let token: UInt64?
+            if purpose.isWatchFaceOperation {
+                nextV1CommandAcknowledgementToken &+= 1
+                token = nextV1CommandAcknowledgementToken
+                if let onV1TransportAcknowledged {
+                    v1CommandAcknowledgementHandlers[token!] = onV1TransportAcknowledged
+                }
+            } else {
+                token = nil
+            }
+            v1Step(Self.v1CommandWrite) { $0.send(protobuf, acknowledgementToken: token) }
             return
         }
         var body = protobuf
@@ -1386,6 +1440,7 @@ final class BandLink: NSObject, ObservableObject {
         sentFrames[seq] = frame
         send(frame)
         seq &+= 1
+        onV1TransportAcknowledged?(true)
     }
 
     private func send(_ frame: Data) {
@@ -1496,14 +1551,14 @@ final class BandLink: NSObject, ObservableObject {
     private func activateImportedWatchFace() {
         guard isInstallingWatchFace, let id = watchFaceUploadID else { return }
         watchFaceListRefreshPending = false
+        watchFaceActivationPending = true
         note("→ activate imported watch face \(id)")
-        sendCommand(watchFaceProfile?.setCommand(id: id) ?? Data(), encrypted: true)
-        let thisRun = run
-        after(15, thisRun) { [weak self] in
-            guard let self, self.active, self.isInstallingWatchFace, !self.watchFaceActivationAcknowledged else { return }
-            self.note("imported watch-face activation timed out")
-            self.fail(.timeout)
-        }
+        sendWatchFaceCommand(
+            watchFaceProfile?.setCommand(id: id) ?? Data(),
+            responseTimeout: 15,
+            timeoutMessage: "imported watch-face activation timed out",
+            while: { $0.isInstallingWatchFace && $0.watchFaceActivationPending }
+        )
     }
 
     /// Runs one step of a V1 channel: writes what it returns to the same characteristic, then acts
@@ -1525,6 +1580,19 @@ final class BandLink: NSObject, ObservableObject {
 
     private func v1Handle(_ event: MiV1Channel.Event, from uuid: CBUUID) {
         switch event {
+        case .taggedMessageStarted(let token):
+            v1CommandPendingAcknowledgements.insert(token)
+            let thisRun = run
+            after(30, thisRun) { [weak self] in
+                guard let self, self.active, self.purpose.isWatchFaceOperation,
+                      self.v1CommandPendingAcknowledgements.contains(token) else { return }
+                self.note("watch-face command transport acknowledgement timed out")
+                self.fail(.timeout)
+            }
+        case .taggedAcknowledged(let token, let accepted):
+            v1CommandPendingAcknowledgements.remove(token)
+            let handler = v1CommandAcknowledgementHandlers.removeValue(forKey: token)
+            handler?(accepted)
         case .message(let body):
             switch uuid {
             case Self.v1Activity: receiveActivityChunk(body)
@@ -1692,7 +1760,7 @@ extension BandLink: CBCentralManagerDelegate {
 
 extension BandLink: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard active else { return }
+        guard active, peripheral == self.peripheral else { return }
         guard let service = peripheral.services?.first(where: { $0.uuid == Self.fe95 }) else {
             fail(.channelUnavailable)
             return
@@ -1702,7 +1770,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard active else { return }
+        guard active, peripheral == self.peripheral else { return }
         let found = service.characteristics ?? []
         if let error { note("FE95 characteristics: \(error.localizedDescription)") }
         if !authed {
@@ -1744,7 +1812,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        guard active else { return }
+        guard active, peripheral == self.peripheral else { return }
         switch transport {
         case .v2:
             guard characteristic.uuid == Self.rxUUID else { return }
@@ -1775,7 +1843,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard let value = characteristic.value else { return }
+        guard active, peripheral == self.peripheral, let value = characteristic.value else { return }
         switch transport {
         case .v2:
             if characteristic.uuid == Self.rxUUID { receive(value) }
@@ -1788,6 +1856,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        guard active, peripheral == self.peripheral else { return }
         pump()
     }
 }
