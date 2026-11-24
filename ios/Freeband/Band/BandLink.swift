@@ -1785,7 +1785,7 @@ extension BandLink: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         note("connected")
         if purpose == .hold {
             // The held session's time limit, from the connection (begin explains why).
@@ -1799,19 +1799,19 @@ extension BandLink: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         fail(.connectFailed)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         fail(.disconnected)
     }
 }
 
 extension BandLink: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         guard let service = peripheral.services?.first(where: { $0.uuid == Self.fe95 }) else {
             fail(.channelUnavailable)
             return
@@ -1821,7 +1821,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         let found = service.characteristics ?? []
         if let error { note("FE95 characteristics: \(error.localizedDescription)") }
         if !authed {
@@ -1863,7 +1863,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         switch transport {
         case .v2:
             guard characteristic.uuid == Self.rxUUID else { return }
@@ -1894,7 +1894,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard active, peripheral == self.peripheral, let value = characteristic.value else { return }
+        guard active, peripheral === self.peripheral, let value = characteristic.value else { return }
         switch transport {
         case .v2:
             if characteristic.uuid == Self.rxUUID { receive(value) }
@@ -1907,7 +1907,7 @@ extension BandLink: CBPeripheralDelegate {
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
-        guard active, peripheral == self.peripheral else { return }
+        guard active, peripheral === self.peripheral else { return }
         pump()
     }
 }
