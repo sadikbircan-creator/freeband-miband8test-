@@ -104,8 +104,8 @@ Freeband isn't on the App Store yet, so for now you build it from source. You ne
 2. **Check the key folder.** In the Files app, On My iPhone should show a `Mi Fitness` folder.
 3. **Get the code:**
    ```sh
-   git clone https://github.com/sadikbircan-creator/freeband-miband8test-
-   cd freeband-miband8test-/ios
+   git clone https://github.com/cobanov/freeband
+   cd freeband/ios
    brew install xcodegen
    ```
 4. **Sign it as yourself.** In `ios/project.yml`, set `DEVELOPMENT_TEAM` to your team ID and `PRODUCT_BUNDLE_IDENTIFIER` to an identifier of your own. With a free Apple ID the app runs for 7 days, then you build it again.
