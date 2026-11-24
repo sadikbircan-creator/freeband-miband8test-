@@ -43,6 +43,8 @@ func fmt(_ o: MiV1Channel.Output) -> [String] {
         switch event {
         case .message(let data): return "msg:" + hex(data)
         case .acknowledged(let ok): return "ack:\(ok)"
+        case .taggedMessageStarted(let token): return "started:\(token)"
+        case .taggedAcknowledged(let token, let ok): return "tagack:\(token):\(ok)"
         case .undecryptable(let n): return "bad:\(n)"
         case .unexpected: return "?"
         }
@@ -67,6 +69,28 @@ let inBig = Data((0..<41).map { UInt8(255 - $0) })
 // plain single writes, the second waiting for the first one's acknowledgement
 var chA = MiV1Channel()
 let plainQueue = [fmt(chA.send(nonceCmd)), fmt(chA.send(batteryCmd)), fmt(chA.receive(d("00000300")))]
+
+// Tagged transport ACKs stay associated with the message that was actually in flight,
+// including when a second message waits in the same characteristic queue.
+var chTagged = MiV1Channel()
+let taggedFirst = chTagged.send(nonceCmd, acknowledgementToken: 101)
+let taggedQueued = chTagged.send(batteryCmd, acknowledgementToken: 102)
+let taggedFirstAck = chTagged.receive(d("00000300"))
+let taggedSecondAck = chTagged.receive(d("00000300"))
+precondition(taggedFirst.events.contains(.taggedMessageStarted(101)))
+precondition(taggedQueued.writes.isEmpty)
+precondition(taggedFirstAck.events.contains(.taggedAcknowledged(101, true)))
+precondition(taggedFirstAck.events.contains(.taggedMessageStarted(102)))
+precondition(taggedSecondAck.events.contains(.taggedAcknowledged(102, true)))
+
+// The same token survives the chunked-message handshake and its final acknowledgement.
+var chTaggedChunk = MiV1Channel(maxWrite: 20)
+let taggedChunkStart = chTaggedChunk.send(big, acknowledgementToken: 201)
+_ = chTaggedChunk.receive(d("00000101"))
+_ = chTaggedChunk.receive(d("000001050200"))
+let taggedChunkAck = chTaggedChunk.receive(d("00000100"))
+precondition(taggedChunkStart.events.contains(.taggedMessageStarted(201)))
+precondition(taggedChunkAck.events.contains(.taggedAcknowledged(201, true)))
 
 // encrypted single writes count from 1
 var chB = MiV1Channel()
