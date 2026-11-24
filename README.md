@@ -2,7 +2,7 @@
 
 # Freeband
 
-Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. This fork also supports the Xiaomi Smart Band 8. Physical testing was performed on one device: hardware model M2239B1, firmware 2.3.14 (2026-11-23). This confirms operation on that exact hardware/firmware combination; other Band 8 revisions have not been tested. Watch-face management is implemented only for the Band 8 profile and is not enabled for other device families. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
+Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. This fork also supports the Xiaomi Smart Band 8. On 2026-11-23, Freeband connected to and authenticated with one physical Xiaomi Smart Band 8 (device model identifier M2239B1, firmware 2.3.14); the watch-face operations listed below were also exercised on that unit. This is the only Band 8 hardware/firmware combination tested; other revisions remain unverified. Watch-face management is implemented only for the Band 8 profile and is not enabled for other device families. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
 
 <p>
   <img src="docs/img/today.png" width="200" alt="Today: sleep, recovery and strain scores">
@@ -19,7 +19,7 @@ Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1
 
 | Feature | State |
 |---|---|
-| Xiaomi Smart Band 8 app support | [TESTED] Physical connection and app use on Xiaomi Smart Band 8, hardware model M2239B1, firmware 2.3.14 (2026-11-23). No other Band 8 hardware/firmware combination has been tested. |
+| Xiaomi Smart Band 8 app support | [TESTED] Freeband connected and authenticated on Xiaomi Smart Band 8, device model identifier M2239B1, firmware 2.3.14 (2026-11-23). This does not establish compatibility with other Band 8 revisions. |
 | Authentication and the encrypted channel (BLE V2) | verified on a Band 10 Pro |
 | Battery, live steps, heart rate and calories | verified |
 | Notifications from Freeband, find band (vibrate), clock sync | verified |
