@@ -67,7 +67,7 @@ The full write-up, with source references:
 - [`docs/WATCH-FACES.md`](docs/WATCH-FACES.md): watch-face protocol sources, Band 8 profile boundaries, compatibility analysis and physical-device validation.
 - [`docs/STAY-CONNECTED.md`](docs/STAY-CONNECTED.md): Stay connected (the held session) and Find Phone.
 
-The docs are in Turkish, except `docs/BLE-V1.md` and `docs/STAY-CONNECTED.md`.
+The docs are in Turkish, except `docs/BLE-V1.md`, `docs/STAY-CONNECTED.md` and `docs/WATCH-FACES.md`.
 
 ## Repository
 
@@ -82,6 +82,9 @@ The docs are in Turkish, except `docs/BLE-V1.md` and `docs/STAY-CONNECTED.md`.
 Running the tests:
 
 ```sh
+# protocol vectors (V2, V1, watch-face parsing/preview and compatibility)
+cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
+
 # activity parsers (Swift) and the Python reference
 cd ios/tests/activity/swift && swiftc ../../../Freeband/Band/ActivityFiles.swift main.swift -o /tmp/act && /tmp/act
 cd ios/tests/activity && python3 activity_ref.py --selftest
