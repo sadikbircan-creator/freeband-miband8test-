@@ -190,10 +190,27 @@ struct WatchFaceManagementView: View {
             }
         }
         .task {
-            guard watchFaceProfile != nil,
-                  !didAutoLoad else { return }
+            guard watchFaceProfile != nil, !didAutoLoad else { return }
+            guard link.watchFaces.isEmpty else {
+                didAutoLoad = true
+                return
+            }
+            // Do not consume the one automatic load attempt while another BLE session owns the link.
+            guard !isBusy else { return }
             didAutoLoad = true
-            if link.watchFaces.isEmpty && !isBusy { refresh() }
+            refresh()
+        }
+        .onChange(of: link.phase) { _, phase in
+            guard watchFaceProfile != nil, !didAutoLoad, link.watchFaces.isEmpty else { return }
+            // If this screen was opened during sync, run its requested initial read only after a
+            // normal/partial session end. A failed session is never followed by an automatic retry.
+            switch phase {
+            case .done, .partial(_):
+                didAutoLoad = true
+                refresh()
+            default:
+                break
+            }
         }
         .fileImporter(
             isPresented: $showingImporter,
