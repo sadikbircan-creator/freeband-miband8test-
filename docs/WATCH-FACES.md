@@ -38,7 +38,6 @@ The profile matcher is intentionally conservative: it recognizes a name containi
 1. `Command{4,0}`: request the installed watch-face list.
 2. `Command{4,1}`: activate a face by ID; require a positive acknowledgement.
 3. `Command{4,2}`: delete a face by ID; require a positive acknowledgement and refresh the list.
-
 4. `Command{4,4}`: prepare installation with face ID and file size; require a present status equal to zero.
 5. `Command{22,0}`: request data upload with type 16, full-file MD5 and size; require a present zero errno.
 6. Send data through the Band 8 profile's FE95/0055 channel. Each part must be acknowledged before the next part.
