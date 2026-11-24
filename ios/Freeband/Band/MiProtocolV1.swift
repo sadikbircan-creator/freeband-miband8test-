@@ -40,7 +40,9 @@ struct MiV1Channel {
         case message(Data)
         /// The watch accepted (true) or refused (false) the message in flight.
         case acknowledged(Bool)
-        /// A tagged message has entered the channel and is waiting for its transport ACK.
+        /// A tagged message is waiting behind another message in this characteristic's FIFO queue.
+        case taggedMessageQueued(UInt64)
+        /// A tagged message has left the FIFO queue; its initial V1 write is now being handed to the transport.
         case taggedMessageStarted(UInt64)
         /// Transport ACK for a tagged message, preserving its caller-assigned token.
         case taggedAcknowledged(UInt64, Bool)
@@ -115,7 +117,12 @@ struct MiV1Channel {
     /// Queues one message. It is written at once unless another is in flight.
     mutating func send(_ message: Data, acknowledgementToken: UInt64? = nil) -> Output {
         queue.append(QueuedMessage(data: message, acknowledgementToken: acknowledgementToken))
-        return sendNext()
+        var out = Output()
+        if inFlight != nil, let acknowledgementToken {
+            out.events.append(.taggedMessageQueued(acknowledgementToken))
+        }
+        out.append(sendNext())
+        return out
     }
 
     /// Handles one notification from this characteristic.
