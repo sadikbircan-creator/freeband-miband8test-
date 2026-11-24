@@ -192,7 +192,7 @@ struct MiV1Channel {
         if encrypts, let cipher {
             let nonceCounter = incrementNonce ? counter : 0
             ctr = nonceCounter
-            body = cipher.encrypt(message, counter: nonceCounter)
+            body = cipher.encrypt(queued.data, counter: nonceCounter)
             if incrementNonce { counter &+= 1 }
         }
         if body.count + 6 <= writeSize {
