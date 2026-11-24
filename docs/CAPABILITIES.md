@@ -635,9 +635,11 @@ Hepsi telefon → bant, kısa oturumla yapılır. AstroBox `System` id listesi `
 
 ## 13. Dosya yükleme: kadran, hızlı uygulama, ikon, firmware
 
-### 13.1 Yükleme protokolü (DataUpload / Mass, type 22)
+### 13.1 Genel yükleme protokolü (DataUpload / Mass, type 22)
 
-Kadran, RPK, bildirim ikonu ve firmware aynı yolu kullanır. Önce türe özgü "hazırlık" komutu (13.2–13.5), sonra:
+Bu bölüm Gadgetbridge/AstroBox kaynaklarında görülen genel DataUpload/Mass akışını, özellikle BLE V2 ve SPP V2 taşımasını açıklar. Bu akış Band 8 kadran uygulamamızın veri taşıma yöntemi değildir. Band 8 kadran profili için `Command{22,0}` hazırlık/negotiation mesajı ortak protobuf ailesinden kullanılsa da dosya parçaları BLE V1 `FE95/0055` karakteristiğinden, V1 onaylarıyla gönderilir; aşağıdaki V2 kanal-2 çerçeveleme ve pencere davranışını ona uygulamayın.
+
+Genel akışta kadran, RPK, bildirim ikonu ve firmware aynı Mass yolunu kullanır. Önce türe özgü "hazırlık" komutu (13.2–13.5), sonra:
 
 1. **Hazırlık:** telefon → `Command{22,0}` → `Command.dataUpload(24).dataUploadRequest(1).{type 1, md5sum 2 (16 bayt, tüm dosyanın MD5'i), size 3 (tüm dosya boyu)}` [KOD] `P/xiaomi/wear_mass.proto:6-17`, `X/services/XiaomiDataUploadService.java:106-130`. AstroBox adları: `mass(24).prepare_request(1){data_type 1, data_id 2, data_length 3, support_compress_mode 4}` [AB] `ABP/wear_mass.proto:22-27`, `ABC/device/xiaomi/components/mass.rs:331-352`.
 2. **Cevap:** `dataUpload(24).dataUploadAck(2).{md5sum 1, errno 2 (0 hazır), resumePosition 4, chunkSize 5}` [KOD] `P/xiaomi/wear_mass.proto:19-24`. AstroBox: `prepare_response(2){data_id 1, prepare_status 2, select_compress_mode 3, remained_data_length 4, expected_slice_length 5}`; durum kodları 0 hazır, 1 meşgul, 2 zaten var, 3 yer yok, 4 pil düşük, 5 sürüm düşürme, 6 desteklenmiyor, 7 sayı sınırı, 8 ağ hatası, 255 hata [AB] `ABP/wear_mass.proto:29-35`, `ABP/wear_common.proto:17-28`. `chunkSize` yoksa Gadgetbridge 2048 alıyor [KOD] `X/services/XiaomiDataUploadService.java:83-87`; AstroBox 0'da iptal ediyor [AB] `mass.rs:507-509`.
@@ -677,6 +679,7 @@ Tür kodları [KOD] `X/services/XiaomiDataUploadService.java:47-50`, [AB] `ABC/d
 
 ### 13.2 Kadranlar
 
+- **Band 8 fork uygulaması [MEASURED]:** Watch-face install uses `Command{4,4}` then `Command{22,0}` for upload negotiation, but sends file parts over BLE V1 `FE95/0055`; each part waits for its V1 channel acknowledgement. Freeband deliberately rejects nonzero `resumePosition` and never retries automatically. See [WATCH-FACES.md](WATCH-FACES.md) for the implemented sequence, parser boundaries and physical-test evidence. Section 13.1's V2/Spp Mass channel-2 framing is not used for this Band 8 path.
 - **Ne yapar:** Yüklü kadranları listeler, aktif kadranı değiştirir, siler, yeni kadran yükler. AstroBox ayrıca fotoğraflı kadran düzenleme yapıyor.
 - **Yön:** telefon → bant.
 - **Mesajlar:** [KOD] `P/xiaomi/wear_watch_face.proto:6-43`, `X/services/XiaomiWatchfaceService.java:44-49`, `:72-262`; [AB] `ABP/wear_watch_face.proto:9-38`
