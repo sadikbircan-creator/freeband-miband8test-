@@ -353,6 +353,7 @@ final class BandLink: NSObject, ObservableObject {
     private var watchFaceInstallPrepared = false
     private var watchFaceActivationAcknowledged = false
     private var watchFaceActivationPending = false
+    private var watchFaceActivationReconciliationPending = false
     private var watchFaceDeletionPending = false
     /// Recheck the band's inventory immediately before upload to prevent duplicate IDs.
     private var watchFacePreflightPending = false
@@ -470,6 +471,7 @@ final class BandLink: NSObject, ObservableObject {
         watchFaceInstallPrepared = false
         watchFaceActivationAcknowledged = false
         watchFaceActivationPending = false
+        watchFaceActivationReconciliationPending = false
         watchFaceDeletionPending = false
         watchFacePreflightPending = false
         if purpose == .watchFaces { watchFaces = [] }
@@ -750,7 +752,8 @@ final class BandLink: NSObject, ObservableObject {
                 watchFaceProfile?.setCommand(id: id) ?? Data(),
                 responseTimeout: 12,
                 timeoutMessage: "watch face activation timed out",
-                when: { $0.purpose == .watchFaceSet(id) && $0.watchFaceActivationPending }
+                when: { $0.purpose == .watchFaceSet(id) && $0.watchFaceActivationPending },
+                onResponseTimeout: { [weak self] in self?.reconcileWatchFaceActivation() }
             )
             return
         }
@@ -1005,6 +1008,18 @@ final class BandLink: NSObject, ObservableObject {
             }
             watchFaces = faces
             note("← watch face list: \(faces.count) item(s)")
+            if watchFaceActivationReconciliationPending {
+                watchFaceActivationReconciliationPending = false
+                let activeID = requestedWatchFaceActivationID
+                guard let activeID, faces.contains(where: { $0.id == activeID && $0.isActive }) else {
+                    watchFaceListRefreshPending = false
+                    note("← watch-face activation could not be confirmed by the refreshed inventory")
+                    fail(.timeout)
+                    return
+                }
+                if isInstallingWatchFace { watchFaceActivationAcknowledged = true }
+                note("← watch-face activation confirmed by the refreshed inventory")
+            }
             if isInstallingWatchFace && watchFacePreflightPending {
                 watchFacePreflightPending = false
                 guard let id = watchFaceUploadID else { fail(.notRead); return }
@@ -1022,14 +1037,20 @@ final class BandLink: NSObject, ObservableObject {
             }
 
         case (4, 1):
+            guard isSettingWatchFace || isInstallingWatchFace else { return }
+            guard watchFaceActivationPending else {
+                note("← late watch face activation acknowledgement ignored during inventory reconciliation")
+                return
+            }
             guard let accepted = watchFaceProfile?.acknowledgement(from: command) else {
                 note("← watch face activation acknowledgement is missing its result")
-                if isSettingWatchFace || isInstallingWatchFace { fail(.notRead) }
+                fail(.notRead)
                 return
             }
             note("← watch face activation acknowledgement: \(accepted ? "true" : "false")")
             watchFaceActivationPending = false
-            if accepted, (isInstallingWatchFace || isSettingWatchFace) {
+            if accepted {
+                watchFaceActivationReconciliationPending = false
                 if isInstallingWatchFace { watchFaceActivationAcknowledged = true }
                 watchFaceListRefreshPending = true
                 sendWatchFaceCommand(
@@ -1038,7 +1059,8 @@ final class BandLink: NSObject, ObservableObject {
                     timeoutMessage: "installed watch-face list refresh timed out",
                     when: { $0.watchFaceListRefreshPending && ($0.isInstallingWatchFace || $0.isSettingWatchFace) }
                 )
-            } else if isSettingWatchFace || isInstallingWatchFace {
+            } else {
+                watchFaceActivationReconciliationPending = false
                 watchFaceListRefreshPending = false
                 note("watch face activation was refused by the band")
                 fail(.notRead)
@@ -1395,7 +1417,8 @@ final class BandLink: NSObject, ObservableObject {
         _ protobuf: Data,
         responseTimeout: TimeInterval,
         timeoutMessage: String,
-        when shouldTimeout: @escaping (BandLink) -> Bool
+        when shouldTimeout: @escaping (BandLink) -> Bool,
+        onResponseTimeout: (() -> Void)? = nil
     ) {
         let thisRun = run
         sendCommand(protobuf, encrypted: true) { [weak self] accepted in
@@ -1407,8 +1430,12 @@ final class BandLink: NSObject, ObservableObject {
             }
             self.after(responseTimeout, thisRun) { [weak self] in
                 guard let self, self.active, shouldTimeout(self) else { return }
-                self.note(timeoutMessage)
-                self.fail(.timeout)
+                if let onResponseTimeout {
+                    onResponseTimeout()
+                } else {
+                    self.note(timeoutMessage)
+                    self.fail(.timeout)
+                }
             }
         }
     }
@@ -1559,7 +1586,34 @@ final class BandLink: NSObject, ObservableObject {
             watchFaceProfile?.setCommand(id: id) ?? Data(),
             responseTimeout: 15,
             timeoutMessage: "imported watch-face activation timed out",
-            when: { $0.isInstallingWatchFace && $0.watchFaceActivationPending }
+            when: { $0.isInstallingWatchFace && $0.watchFaceActivationPending },
+            onResponseTimeout: { [weak self] in self?.reconcileWatchFaceActivation() }
+        )
+    }
+
+    private var requestedWatchFaceActivationID: String? {
+        switch purpose {
+        case .watchFaceSet(let id): return id
+        case .watchFaceInstall(let id, _, _): return id
+        default: return nil
+        }
+    }
+
+    /// The activation command is never repeated. If its reply is lost, make one read-only inventory
+    /// request and confirm the active ID before reporting the operation as complete.
+    private func reconcileWatchFaceActivation() {
+        guard active, watchFaceActivationPending,
+              requestedWatchFaceActivationID != nil,
+              let listCommand = watchFaceProfile?.listCommand() else { return }
+        watchFaceActivationPending = false
+        watchFaceActivationReconciliationPending = true
+        watchFaceListRefreshPending = true
+        note("watch-face activation reply missing; checking the band's active-face inventory")
+        sendWatchFaceCommand(
+            listCommand,
+            responseTimeout: 12,
+            timeoutMessage: "watch-face activation reconciliation timed out",
+            when: { $0.watchFaceActivationReconciliationPending }
         )
     }
 
