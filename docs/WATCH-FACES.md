@@ -16,7 +16,7 @@ A physical-device test backed by application logs should use **[MEASURED]** (and
 
 ## Current support boundary
 
-- **Watch-face support is currently limited to the Xiaomi Smart Band 8.** The watch-face workflow has been tested on a physical Band 8; its commands, file validation and FE95/0055 upload channel belong to the Band 8 profile.
+- **Freeband watch-face support is implemented only for the Xiaomi Smart Band 8 profile.** Physical validation was performed on one Xiaomi Smart Band 8, hardware model `M2239B1`, firmware `2.3.14`, on 2026-11-23. The tested commands, BIN validation and FE95/0055 upload channel belong to this profile. This does not establish support for other Band 8 hardware/firmware revisions.
 - **[NOT TESTED] Other Xiaomi devices:** sharing a Xiaomi protobuf envelope, FE95 service, or 0055 characteristic does not prove that the same watch-face file format, transport, chunk rules or install-result behavior is supported.
 - **Current import scope:** the Freeband picker accepts `.bin` files only. AstroBox's `.mwz` package extraction is documented as a research reference; `.mwz` parsing/extraction is not implemented in this fork.
 - Future devices must get their own profile. No other profile may fall back to Band 8 commands or file validation.
@@ -31,7 +31,7 @@ The runtime registry is `ios/Freeband/Band/WatchFaceProfiles.swift`.
 - The UI keeps the existing Band 8 flow. Devices without a profile see a WIP/unsupported state and do not start a watch-face session.
 - A future profile must be added explicitly to the registry with its own protocol/transport and file rules. Never add a generic fallback to the Band 8 implementation.
 
-The profile matcher is intentionally conservative: it recognizes a name containing `Band 8`, while excluding names containing `Pro` or `Active`. It does not infer compatibility from a shared Xiaomi protobuf transport.
+The profile matcher is intentionally conservative: `Band.family(name:model:)` recognizes a connected/saved device name matching `Band 8` (with or without a space), while excluding names containing `Pro` or `Active`. It does not select the profile from the reported hardware identifier `M2239B1`; that identifier documents the physical test unit only. A shared Xiaomi protobuf transport does not infer compatibility.
 
 ## Band 8 command sequence
 
@@ -151,6 +151,7 @@ The following core operations were completed on the physical band using the prof
 
 **[NOT TESTED] Not yet verified**
 - Profile rejection and unsupported-state behavior on a different physical device.
+- Watch-face operations on other Band 8 hardware identifiers or firmware versions; only `M2239B1` / `2.3.14` has been physically tested.
 - Malformed or truncated BIN handling on-device.
 - Preview decoding accuracy against an independent decoder.
 - Whether a one-style/no-AOD Band 8 BIN is accepted and rendered by the tested firmware.
