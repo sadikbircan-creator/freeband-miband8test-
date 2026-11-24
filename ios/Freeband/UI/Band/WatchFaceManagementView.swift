@@ -60,7 +60,7 @@ struct WatchFaceManagementView: View {
 
                 if link.watchFaces.isEmpty && !isLoading {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(String(localized: "No watch faces loaded"))
+                        Text(String(localized: "No watch faces installed"))
                             .font(.headline)
                         Text(String(localized: "Tap refresh to read the watch faces installed on your band."))
                             .font(.subheadline)
@@ -75,7 +75,7 @@ struct WatchFaceManagementView: View {
             } header: {
                 Text(String(localized: "Installed on the band"))
             } footer: {
-                Text(String(localized: "Close Mi Fitness before managing watch faces. Only custom inactive faces can be deleted."))
+                Text(String(localized: "Close Mi Fitness before managing watch faces. Only faces the band marks as deletable can be deleted, and active faces cannot be deleted."))
             }
 
             if case .failed = link.phase, link.purpose.isWatchFaceOperation {
