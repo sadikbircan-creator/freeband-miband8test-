@@ -227,6 +227,10 @@ final class BandLink: NSObject, ObservableObject {
     static let syncWindow: TimeInterval = 12
     /// Upper bound for a sync that also fetches activity files.
     static let fileSyncLimit: TimeInterval = 120
+    /// Maximum time a watch-face command may wait behind another V1 command on 0052.
+    static let v1CommandQueueTimeout: TimeInterval = 30
+    /// Maximum time for a started watch-face V1 command to receive its transport ACK.
+    static let v1CommandAcknowledgementTimeout: TimeInterval = 30
     /// iOS relaunches the app for the held session's Bluetooth events under this name.
     static let restoreIdentifier = "freeband.central"
     /// Diagnostics keeps this many log lines across sessions.
@@ -307,6 +311,9 @@ final class BandLink: NSObject, ObservableObject {
     /// V1 command messages for watch-face operations: transport ACK handlers and in-flight watchdogs.
     private var nextV1CommandAcknowledgementToken: UInt64 = 0
     private var v1CommandAcknowledgementHandlers: [UInt64: (Bool) -> Void] = [:]
+    /// Tagged watch-face commands waiting behind the current V1 0052 message.
+    private var v1CommandQueuedTokens: Set<UInt64> = []
+    /// Tagged watch-face commands dispatched by MiV1Channel and waiting for their V1 ACK.
     private var v1CommandPendingAcknowledgements: Set<UInt64> = []
     /// V1: the latest missing-slice timer per characteristic; `sliceTimerSerial` never resets, so a
     /// timer from before a reconnect never matches.
@@ -694,6 +701,7 @@ final class BandLink: NSObject, ObservableObject {
         authed = true
         // Authentication resets the V1 channel's pre-auth queue; its old tokens are no longer live.
         v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandQueuedTokens.removeAll()
         v1CommandPendingAcknowledgements.removeAll()
         // Resolve against the name of the peripheral that actually authenticated, not only
         // the saved display label. The saved name is a fallback for devices that omit it.
@@ -1371,6 +1379,7 @@ final class BandLink: NSObject, ObservableObject {
         pendingStart = nil
         writeQueue = []
         v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandQueuedTokens.removeAll()
         v1CommandPendingAcknowledgements.removeAll()
         if central.isScanning { central.stopScan() }
         if let p = peripheral {
@@ -1387,6 +1396,7 @@ final class BandLink: NSObject, ObservableObject {
             p.setNotifyValue(false, for: characteristic)
         }
         v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandQueuedTokens.removeAll()
         v1CommandPendingAcknowledgements.removeAll()
     }
 
@@ -1405,6 +1415,7 @@ final class BandLink: NSObject, ObservableObject {
         v1Channels = [:]
         sliceTimers = [:]
         v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandQueuedTokens.removeAll()
         v1CommandPendingAcknowledgements.removeAll()
     }
 
@@ -1634,13 +1645,23 @@ final class BandLink: NSObject, ObservableObject {
 
     private func v1Handle(_ event: MiV1Channel.Event, from uuid: CBUUID) {
         switch event {
+        case .taggedMessageQueued(let token):
+            v1CommandQueuedTokens.insert(token)
+            let thisRun = run
+            after(Self.v1CommandQueueTimeout, thisRun) { [weak self] in
+                guard let self, self.active, self.purpose.isWatchFaceOperation,
+                      self.v1CommandQueuedTokens.contains(token) else { return }
+                self.note("watch-face command did not leave the V1 0052 queue before timeout")
+                self.fail(.timeout)
+            }
         case .taggedMessageStarted(let token):
+            v1CommandQueuedTokens.remove(token)
             v1CommandPendingAcknowledgements.insert(token)
             let thisRun = run
-            after(30, thisRun) { [weak self] in
+            after(Self.v1CommandAcknowledgementTimeout, thisRun) { [weak self] in
                 guard let self, self.active, self.purpose.isWatchFaceOperation,
                       self.v1CommandPendingAcknowledgements.contains(token) else { return }
-                self.note("watch-face command transport acknowledgement timed out")
+                self.note("watch-face command V1 transport acknowledgement timed out")
                 self.fail(.timeout)
             }
         case .taggedAcknowledged(let token, let accepted):
