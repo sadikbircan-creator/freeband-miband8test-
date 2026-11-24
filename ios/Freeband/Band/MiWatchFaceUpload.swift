@@ -42,8 +42,9 @@ enum MiWatchFaceUpload {
         return command.data
     }
 
-    /// Builds [00, type, md5, sizeLE, file-from-resume, crc32LE] and
+    /// Builds a full-file payload [00, type, md5, sizeLE, file, crc32LE] and
     /// wraps it in BLE V1 data parts: [total u16 LE, index u16 LE, payload].
+    /// Partial resume offsets are deliberately rejected; each user-started attempt sends the full file.
     static func parts(file: Data, chunkSize: Int = defaultChunkSize,
                       resumePosition: Int = 0) throws -> [Data] {
         guard !file.isEmpty else { throw Failure.emptyFile }
@@ -55,7 +56,7 @@ enum MiWatchFaceUpload {
         var body = Data([0, UInt8(dataType)])
         body.append(digest)
         appendUInt32LE(UInt32(file.count), to: &body)
-        body.append(contentsOf: file.dropFirst(resumePosition))
+        body.append(file)
         appendUInt32LE(crc32(body), to: &body)
 
         // BLE V1 has no additional per-part link overhead; the four-byte
@@ -106,7 +107,7 @@ enum MiWatchFaceUpload {
               let id = String(data: Data(idBytes), encoding: .ascii) else {
             throw ParseFailure.invalidID
         }
-        let name = headerString(0x68..<0xA4) ?? "Imported watch face"
+        let name = headerString(0x68..<0xA4) ?? String(localized: "Imported watch face")
         return ImportedWatchFace(id: id, name: name, data: data, faceCount: faceCount)
     }
 
@@ -120,10 +121,10 @@ enum MiWatchFaceUpload {
 
         var errorDescription: String? {
             switch self {
-            case .headerTooShort: return "The file is shorter than a Mi Band 8 watch-face header."
-            case .fileTooLarge: return "The watch-face file is larger than the 16 MB safety limit."
-            case .invalidMagic: return "This file does not have a recognized Xiaomi watch-face signature."
-            case .invalidID: return "The watch-face ID in the file is missing or invalid."
+            case .headerTooShort: return String(localized: "The file is shorter than a Mi Band 8 watch-face header.")
+            case .fileTooLarge: return String(localized: "The watch-face file is larger than the 16 MB safety limit.")
+            case .invalidMagic: return String(localized: "This file does not have a recognized Xiaomi watch-face signature.")
+            case .invalidID: return String(localized: "The watch-face ID in the file is missing or invalid.")
             case .invalidFaceCount:
                 return String(localized: "This file does not declare any watch-face styles.")
             }
