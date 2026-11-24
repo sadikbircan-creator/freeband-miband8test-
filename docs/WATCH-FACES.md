@@ -16,7 +16,7 @@ A physical-device test backed by application logs should use **[MEASURED]** (and
 
 ## Current support boundary
 
-- **[MEASURED] Xiaomi Smart Band 8:** the existing watch-face work is tested against the Band 8. Its commands, file validation and FE95/0055 upload channel belong to the Band 8 profile.
+- **Watch-face support is currently limited to the Xiaomi Smart Band 8.** The watch-face workflow has been tested on a physical Band 8; its commands, file validation and FE95/0055 upload channel belong to the Band 8 profile.
 - **[NOT TESTED] Other Xiaomi devices:** sharing a Xiaomi protobuf envelope, FE95 service, or 0055 characteristic does not prove that the same watch-face file format, transport, chunk rules or install-result behavior is supported.
 - **Current import scope:** the Freeband picker accepts `.bin` files only. AstroBox's `.mwz` package extraction is documented as a research reference; `.mwz` parsing/extraction is not implemented in this fork.
 - Future devices must get their own profile. No other profile may fall back to Band 8 commands or file validation.
@@ -33,11 +33,6 @@ The runtime registry is `ios/Freeband/Band/WatchFaceProfiles.swift`.
 
 The profile matcher is intentionally conservative: it recognizes a name containing `Band 8`, while excluding names containing `Pro` or `Active`. It does not infer compatibility from a shared Xiaomi protobuf transport.
 
-## Band 8 command sequence
-
-1. `Command{4,0}`: request the installed watch-face list.
-2. `Command{4,1}`: activate a face by ID; require a positive acknowledgement.
-3. `Command{4,2}`: delete a face by ID; require a positive acknowledgement and refresh the list.
 4. `Command{4,4}`: prepare installation with face ID and file size; require a present status equal to zero.
 5. `Command{22,0}`: request data upload with type 16, full-file MD5 and size; require a present zero errno.
 6. Send data through the Band 8 profile's FE95/0055 channel. Each part must be acknowledged before the next part.
