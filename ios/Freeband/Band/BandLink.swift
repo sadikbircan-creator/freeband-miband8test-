@@ -737,7 +737,7 @@ final class BandLink: NSObject, ObservableObject {
                 watchFaceProfile?.listCommand() ?? Data(),
                 responseTimeout: 12,
                 timeoutMessage: "watch face list timed out",
-                while: { $0.purpose == .watchFaces }
+                when: { $0.purpose == .watchFaces }
             )
             return
         }
@@ -750,7 +750,7 @@ final class BandLink: NSObject, ObservableObject {
                 watchFaceProfile?.setCommand(id: id) ?? Data(),
                 responseTimeout: 12,
                 timeoutMessage: "watch face activation timed out",
-                while: { $0.purpose == .watchFaceSet(id) && $0.watchFaceActivationPending }
+                when: { $0.purpose == .watchFaceSet(id) && $0.watchFaceActivationPending }
             )
             return
         }
@@ -770,7 +770,7 @@ final class BandLink: NSObject, ObservableObject {
                 watchFaceProfile?.listCommand() ?? Data(),
                 responseTimeout: 12,
                 timeoutMessage: "watch-face duplicate check timed out",
-                while: { $0.isInstallingWatchFace && $0.watchFacePreflightPending }
+                when: { $0.isInstallingWatchFace && $0.watchFacePreflightPending }
             )
             return
         }
@@ -783,7 +783,7 @@ final class BandLink: NSObject, ObservableObject {
                 watchFaceProfile?.deleteCommand(id: id) ?? Data(),
                 responseTimeout: 12,
                 timeoutMessage: "watch face deletion timed out",
-                while: { $0.purpose == .watchFaceDelete(id) && $0.watchFaceDeletionPending }
+                when: { $0.purpose == .watchFaceDelete(id) && $0.watchFaceDeletionPending }
             )
             return
         }
@@ -829,7 +829,7 @@ final class BandLink: NSObject, ObservableObject {
             watchFaceProfile?.installCommand(faceID: id, size: data.count) ?? Data(),
             responseTimeout: 20,
             timeoutMessage: "watch face install preparation timed out",
-            while: { $0.isInstallingWatchFace && !$0.watchFaceInstallPrepared }
+            when: { $0.isInstallingWatchFace && !$0.watchFaceInstallPrepared }
         )
     }
 
@@ -954,7 +954,7 @@ final class BandLink: NSObject, ObservableObject {
                 request,
                 responseTimeout: 20,
                 timeoutMessage: "watch-face upload negotiation timed out",
-                while: { $0.isInstallingWatchFace && $0.watchFaceUploadParts.isEmpty }
+                when: { $0.isInstallingWatchFace && $0.watchFaceUploadParts.isEmpty }
             )
 
         case (22, 0) where isInstallingWatchFace:
@@ -1036,7 +1036,7 @@ final class BandLink: NSObject, ObservableObject {
                     watchFaceProfile?.listCommand() ?? Data(),
                     responseTimeout: 12,
                     timeoutMessage: "installed watch-face list refresh timed out",
-                    while: { $0.watchFaceListRefreshPending && ($0.isInstallingWatchFace || $0.isSettingWatchFace) }
+                    when: { $0.watchFaceListRefreshPending && ($0.isInstallingWatchFace || $0.isSettingWatchFace) }
                 )
             } else if isSettingWatchFace || isInstallingWatchFace {
                 watchFaceListRefreshPending = false
@@ -1058,7 +1058,7 @@ final class BandLink: NSObject, ObservableObject {
                     watchFaceProfile?.listCommand() ?? Data(),
                     responseTimeout: 12,
                     timeoutMessage: "deleted watch-face list refresh timed out",
-                    while: { $0.watchFaceListRefreshPending && $0.purpose.isWatchFaceOperation }
+                    when: { $0.watchFaceListRefreshPending && $0.purpose.isWatchFaceOperation }
                 )
             } else if case .watchFaceDelete(_) = purpose {
                 watchFaceListRefreshPending = false
@@ -1349,6 +1349,8 @@ final class BandLink: NSObject, ObservableObject {
         active = false
         pendingStart = nil
         writeQueue = []
+        v1CommandAcknowledgementHandlers.removeAll()
+        v1CommandPendingAcknowledgements.removeAll()
         if central.isScanning { central.stopScan() }
         if let p = peripheral {
             unsubscribe(p)
@@ -1393,7 +1395,7 @@ final class BandLink: NSObject, ObservableObject {
         _ protobuf: Data,
         responseTimeout: TimeInterval,
         timeoutMessage: String,
-        while shouldTimeout: @escaping (BandLink) -> Bool
+        when shouldTimeout: @escaping (BandLink) -> Bool
     ) {
         let thisRun = run
         sendCommand(protobuf, encrypted: true) { [weak self] accepted in
@@ -1557,7 +1559,7 @@ final class BandLink: NSObject, ObservableObject {
             watchFaceProfile?.setCommand(id: id) ?? Data(),
             responseTimeout: 15,
             timeoutMessage: "imported watch-face activation timed out",
-            while: { $0.isInstallingWatchFace && $0.watchFaceActivationPending }
+            when: { $0.isInstallingWatchFace && $0.watchFaceActivationPending }
         )
     }
 
