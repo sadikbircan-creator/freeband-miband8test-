@@ -43,6 +43,7 @@ func fmt(_ o: MiV1Channel.Output) -> [String] {
         switch event {
         case .message(let data): return "msg:" + hex(data)
         case .acknowledged(let ok): return "ack:\(ok)"
+        case .taggedMessageQueued(let token): return "queued:\(token)"
         case .taggedMessageStarted(let token): return "started:\(token)"
         case .taggedAcknowledged(let token, let ok): return "tagack:\(token):\(ok)"
         case .undecryptable(let n): return "bad:\(n)"
@@ -79,6 +80,8 @@ let taggedFirstAck = chTagged.receive(d("00000300"))
 let taggedSecondAck = chTagged.receive(d("00000300"))
 precondition(taggedFirst.events.contains(.taggedMessageStarted(101)))
 precondition(taggedQueued.writes.isEmpty)
+precondition(taggedQueued.events == [.taggedMessageQueued(102)])
+precondition(!taggedQueued.events.contains(.taggedMessageStarted(102)))
 precondition(taggedFirstAck.events.contains(.taggedAcknowledged(101, true)))
 precondition(taggedFirstAck.events.contains(.taggedMessageStarted(102)))
 precondition(taggedSecondAck.events.contains(.taggedAcknowledged(102, true)))
