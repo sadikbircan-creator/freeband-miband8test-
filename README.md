@@ -2,7 +2,7 @@
 
 # Freeband
 
-Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. This fork also supports the Xiaomi Smart Band 8: the Freeband app has been tested and works on a physical Band 8. Watch-face management is currently supported only on the Band 8. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
+Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. This fork also supports the Xiaomi Smart Band 8. Physical testing was performed on one device: hardware model M2239B1, firmware 2.3.14 (2026-11-23). This confirms operation on that exact hardware/firmware combination; other Band 8 revisions have not been tested. Watch-face management is implemented only for the Band 8 profile and is not enabled for other device families. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
 
 <p>
   <img src="docs/img/today.png" width="200" alt="Today: sleep, recovery and strain scores">
@@ -19,7 +19,7 @@ Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1
 
 | Feature | State |
 |---|---|
-| Xiaomi Smart Band 8 app support | The app has been tested and works on a physical Band 8. |
+| Xiaomi Smart Band 8 app support | [TESTED] Physical connection and app use on Xiaomi Smart Band 8, hardware model M2239B1, firmware 2.3.14 (2026-11-23). No other Band 8 hardware/firmware combination has been tested. |
 | Authentication and the encrypted channel (BLE V2) | verified on a Band 10 Pro |
 | Battery, live steps, heart rate and calories | verified |
 | Notifications from Freeband, find band (vibrate), clock sync | verified |
@@ -27,7 +27,7 @@ Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1
 | Redmi Watch 5 Active: authentication, battery, live stats, and fetching and parsing its daily summary, per-minute and sleep files | verified on firmware 2.2.105 |
 | Xiaomi Watch S1 Active, on the older BLE V1 channel: authentication, battery, live stats, notifications, its activity files, and sleep sessions from the watch's fell-asleep and woke-up events. The watch ignores Find, so Freeband hides it | verified on firmware 1.4.174 |
 | Find Phone: with Stay connected on (Band tab), Freeband keeps a session open in the background, and the watch's Find Phone rings the iPhone, also locked and on silent. Mi Fitness can't connect while it's on ([docs/STAY-CONNECTED.md](docs/STAY-CONNECTED.md)) | verified on a Xiaomi Watch S1 Active, firmware 1.4.174; a whole night idle not tested yet |
-| Mi Band 8 watch-face management | Supported only on Mi Band 8. Listing, activation, deletion of removable inactive faces, BIN preview and installation have been tested on a physical Band 8 (firmware 2.3.14). Band 8 sample faces displayed previews; Band 10-origin samples showed the expected compatibility warnings and remained installable. |
+| Mi Band 8 watch-face management | Implemented only for the Band 8 profile; not enabled for other device families. [TESTED] On Xiaomi Smart Band 8 M2239B1, firmware 2.3.14: listing, activation, deletion of removable inactive faces, BIN preview and installation were exercised. Band 8-origin samples displayed previews. Some Band 10-origin samples were accepted by this Band 8's installer but rendered incorrectly; this does not mean Band 10 is supported. Other Band 8 revisions and watch-face operations on other device families have not been tested. |
 | Parsing them: per-minute data, daily summary, sleep and sleep stages, manual readings | implemented and tested against fixtures; not yet checked with real files from a Band 10 |
 | Sleep, Recovery and Strain scores with contributors and confidence | implemented (algorithm v1) |
 | Worth noticing: what stands out today against your own normal (resting heart rate, HRV, sleep debt, sleep timing, hard days on low recovery) | implemented and tested (v1 thresholds, not validated on real weeks yet) |
