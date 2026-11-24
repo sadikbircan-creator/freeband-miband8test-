@@ -351,7 +351,6 @@ final class BandLink: NSObject, ObservableObject {
     private var watchFaceUploadTimerToken = 0
     private var watchFaceUploadID: String?
     private var watchFaceInstallPrepared = false
-    private var watchFaceActivationAcknowledged = false
     private var watchFaceActivationPending = false
     private var watchFaceActivationReconciliationPending = false
     private var watchFaceDeletionPending = false
@@ -469,7 +468,6 @@ final class BandLink: NSObject, ObservableObject {
         watchFaceUploadTimerToken = 0
         watchFaceUploadID = nil
         watchFaceInstallPrepared = false
-        watchFaceActivationAcknowledged = false
         watchFaceActivationPending = false
         watchFaceActivationReconciliationPending = false
         watchFaceDeletionPending = false
@@ -1017,7 +1015,6 @@ final class BandLink: NSObject, ObservableObject {
                     fail(.timeout)
                     return
                 }
-                if isInstallingWatchFace { watchFaceActivationAcknowledged = true }
                 note("← watch-face activation confirmed by the refreshed inventory")
             }
             if isInstallingWatchFace && watchFacePreflightPending {
@@ -1051,7 +1048,6 @@ final class BandLink: NSObject, ObservableObject {
             watchFaceActivationPending = false
             if accepted {
                 watchFaceActivationReconciliationPending = false
-                if isInstallingWatchFace { watchFaceActivationAcknowledged = true }
                 watchFaceListRefreshPending = true
                 sendWatchFaceCommand(
                     watchFaceProfile?.listCommand() ?? Data(),
@@ -1449,17 +1445,16 @@ final class BandLink: NSObject, ObservableObject {
             // Tag every command-channel message during watch-face operations. Its response timer
             // starts on the transport ACK; a separate watchdog covers a message once it leaves
             // the per-characteristic queue.
-            let token: UInt64?
             if purpose.isWatchFaceOperation {
                 nextV1CommandAcknowledgementToken &+= 1
-                token = nextV1CommandAcknowledgementToken
+                let token = nextV1CommandAcknowledgementToken
                 if let onV1TransportAcknowledged {
-                    v1CommandAcknowledgementHandlers[token!] = onV1TransportAcknowledged
+                    v1CommandAcknowledgementHandlers[token] = onV1TransportAcknowledged
                 }
+                v1Step(Self.v1CommandWrite) { $0.send(protobuf, acknowledgementToken: token) }
             } else {
-                token = nil
+                v1Step(Self.v1CommandWrite) { $0.send(protobuf) }
             }
-            v1Step(Self.v1CommandWrite) { $0.send(protobuf, acknowledgementToken: token) }
             return
         }
         var body = protobuf
