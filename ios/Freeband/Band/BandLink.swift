@@ -219,7 +219,7 @@ final class BandLink: NSObject, ObservableObject {
     static let v1CommandWrite = CBUUID(string: "0052")
     static let v1Activity = CBUUID(string: "0053")
     static let v1UUIDs = [v1CommandRead, v1CommandWrite, v1Activity]
-    /// Data upload (watch faces, firmware): not used, but subscribed when present, as Gadgetbridge does.
+    /// Optional BLE V1 data-upload channel (0055). The Band 8 watch-face profile uses it for file parts; firmware upload is not implemented.
     static let v1Upload = CBUUID(string: "0055")
     /// The order Gadgetbridge turns notifications on in (docs/BLE-V1.md section 4).
     static let v1SubscribeOrder = [v1CommandWrite, v1CommandRead, v1Activity, v1Upload]
