@@ -42,7 +42,7 @@ The watch-face feature is a deliberately isolated Band 8 profile, not a generic 
 - When recording diagnostics, include only sanitized event summaries and the relevant non-secret status/count/timeout lines. Never commit raw authentication request/response payloads, keys, MAC addresses, serials, CoreBluetooth identifiers, or personal notification content. Mark hypotheses (for example, delayed ACKs after reconnect) as unconfirmed.
 - Record physical results with exact model, firmware and date. Use `[MEASURED]` only when diagnostic evidence supports the physical result; use `[TESTED]` for user-observed results without retained logs; use `[DIAGNOSTIC]` for offline/log evidence that is not itself a physical-device measurement. Keep untested behavior explicitly marked.
 
-The focused protocol-vector command below includes watch-face parsing, preview and compatibility tests. The unsigned IPA workflow is fork-local during this feature's physical validation; do not remove it from the feature branch until the user explicitly says validation is complete.
+The focused protocol-vector command below includes watch-face parsing, preview and compatibility tests. The unsigned IPA workflow is fork-local and must not be included in pull requests to the upstream repository.
 
 ## Tests
 
