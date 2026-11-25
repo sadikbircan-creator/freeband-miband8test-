@@ -2,7 +2,7 @@
 
 # Freeband
 
-Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. This fork also supports the Xiaomi Smart Band 8. On 2026-11-23, Freeband connected to and authenticated with one physical Xiaomi Smart Band 8 (device model identifier M2239B1, firmware 2.3.14); the watch-face operations listed below were also exercised on that unit. This is the only Band 8 hardware/firmware combination tested; other revisions remain unverified. Watch-face management is implemented only for the Band 8 profile and is not enabled for other device families. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
+Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. Freeband also supports the Xiaomi Smart Band 8. On 2026-11-23, Freeband connected to and authenticated with one physical Xiaomi Smart Band 8 (device model identifier M2239B1, firmware 2.3.14); the watch-face operations listed below were also exercised on that unit. This is the only Band 8 hardware/firmware combination tested; other revisions remain unverified. Watch-face management is implemented only for the Band 8 profile and is not enabled for other device families. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
 
 <p>
   <img src="docs/img/today.png" width="200" alt="Today: sleep, recovery and strain scores">
@@ -98,7 +98,7 @@ cd hub && npm install && npx tsc --noEmit && npx vitest run
 
 ## Try it yourself
 
-Freeband isn't on the App Store yet, so for now you build it from source. You need an iPhone with iOS 17 or later and a supported band, including the Xiaomi Smart Band 8 on this fork. Building requires a Mac with Xcode 27 and a free Apple ID. The same guide with more detail is at [freeband.cobanov.dev/guide](https://freeband.cobanov.dev/guide).
+Freeband isn't on the App Store yet, so for now you build it from source. You need an iPhone with iOS 17 or later and a supported band, including the Xiaomi Smart Band 8. Building requires a Mac with Xcode 27 and a free Apple ID. The same guide with more detail is at [freeband.cobanov.dev/guide](https://freeband.cobanov.dev/guide).
 
 1. **Pair the band with Mi Fitness once**, if it isn't already, and let it sync. This is the only time you need Mi Fitness: Xiaomi's server creates the band's key during pairing.
 2. **Check the key folder.** In the Files app, On My iPhone should show a `Mi Fitness` folder.
@@ -119,6 +119,7 @@ Freeband isn't on the App Store yet, so for now you build it from source. You ne
    - Trust your developer certificate under Settings → General → VPN & Device Management.
 
    With SideStore or AltStore on the iPhone, you can skip steps 4 and 5: `sh tools/build-ipa.sh` (from `ios/`) writes an unsigned `build/Freeband.ipa`, which they sign with your Apple ID when you install it. AirDropped to the iPhone, the file lands in Files › Downloads.
+
 6. **Read the key.** In Freeband, tap Get started, then Choose folder, then go to Browse → On My iPhone → Mi Fitness → Open.
 7. **Connect.** Close Mi Fitness from the app switcher, keep the band close and tap Connect.
 8. **Keep Mi Fitness out of the way.** Turn off its Background App Refresh or offload it (see below).
