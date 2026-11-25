@@ -16,7 +16,13 @@ struct WatchFaceManagementView: View {
     @State private var importedFace: ImportedWatchFace?
     @State private var compatibilityReport: WatchFaceCompatibilityReport?
     @State private var showingInstallConfirmation = false
-    @State private var importError: String?
+    @State private var activeAlert: WatchFaceAlert?
+
+    private struct WatchFaceAlert {
+        let title: String
+        let message: String
+        let refreshAfterAcknowledgement: Bool
+    }
 
     private var isBusy: Bool { link.phase.isBusy }
     private var isInstalling: Bool {
@@ -201,6 +207,22 @@ struct WatchFaceManagementView: View {
             refresh()
         }
         .onChange(of: link.phase) { _, phase in
+            if case .failed(let message) = phase, link.purpose.isWatchFaceOperation {
+                // A failed mutation may have reached the band even when its reply was lost.
+                // Wait for the user's acknowledgement, then perform one read-only inventory refresh.
+                // A failed inventory read itself never schedules another refresh.
+                let shouldRefreshAfterAcknowledgement: Bool
+                if case .watchFaces = link.purpose {
+                    shouldRefreshAfterAcknowledgement = false
+                } else {
+                    shouldRefreshAfterAcknowledgement = true
+                }
+                activeAlert = WatchFaceAlert(
+                    title: String(localized: "Watch-face operation failed"),
+                    message: "\(message)\n\n\(String(localized: "The failed operation will not be repeated. After you acknowledge this message, Freeband will read the installed watch-face list again."))",
+                    refreshAfterAcknowledgement: shouldRefreshAfterAcknowledgement
+                )
+            }
             guard watchFaceProfile != nil, !didAutoLoad, link.watchFaces.isEmpty else { return }
             // If this screen was opened during sync, run its requested initial read only after a
             // normal/partial session end. A failed session is never followed by an automatic retry.
@@ -229,7 +251,11 @@ struct WatchFaceManagementView: View {
             } catch {
                 importedFace = nil
                 compatibilityReport = nil
-                importError = error.localizedDescription
+                activeAlert = WatchFaceAlert(
+                    title: String(localized: "Couldn't open watch-face file"),
+                    message: error.localizedDescription,
+                    refreshAfterAcknowledgement: false
+                )
             }
         }
         .confirmationDialog(
@@ -245,13 +271,17 @@ struct WatchFaceManagementView: View {
         } message: {
             Text(String(localized: "The watch will be checked again before installation. Any matching face must be deleted manually first."))
         }
-        .alert(String(localized: "Couldn't open watch-face file"), isPresented: Binding(
-            get: { importError != nil },
-            set: { if !$0 { importError = nil } }
+        .alert(activeAlert?.title ?? "", isPresented: Binding(
+            get: { activeAlert != nil },
+            set: { if !$0 { activeAlert = nil } }
         )) {
-            Button(String(localized: "OK"), role: .cancel) { importError = nil }
+            Button(String(localized: "OK"), role: .cancel) {
+                let shouldRefresh = activeAlert?.refreshAfterAcknowledgement ?? false
+                activeAlert = nil
+                if shouldRefresh { refresh() }
+            }
         } message: {
-            Text(importError ?? "")
+            Text(activeAlert?.message ?? "")
         }
         .confirmationDialog(
             String(localized: "Delete this watch face?"),
