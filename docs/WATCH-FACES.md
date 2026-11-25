@@ -43,7 +43,7 @@ The profile matcher is intentionally conservative: `Band.family(name:model:)` re
 6. Send data through the Band 8 profile's FE95/0055 channel. Each part must be acknowledged before the next part.
 7. Reject nonzero `resumePosition` and stop the current attempt without sending partial file data. Freeband does not try an undocumented same-session reset. A new user-initiated install starts again at `Command{4,4}` and repeats upload negotiation from the start; if the band reports a nonzero offset again, the attempt is stopped again.
 8. Wait for `Command{4,5}`; validate the returned ID and result code. Only `INSTALL_SUCCESS = 2` permits activation. Codes 0 (verification failed), 1 (install failed), 3 (already installed/in use), malformed replies and timeouts are failures.
-9. After activation, require its acknowledgement and refresh the installed list before reporting completion.
+9. After activation, require its acknowledgement and refresh the installed list before reporting completion. If the activation reply is missing, do not resend the state-changing activation command: issue one read-only inventory request and confirm that the requested ID is active. If that reconciliation cannot confirm the active ID, fail the operation.
 
 Protocol sources:
 - [SOURCE] Gadgetbridge watch-face command handling and install-result flow: [XiaomiWatchfaceService.java](https://codeberg.org/Freeyourgadget/Gadgetbridge/src/commit/83b2efe915631b484f5c0b15b0cd1b52ebea3580/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/services/XiaomiWatchfaceService.java#L44-L262).
@@ -316,3 +316,76 @@ Authentication payloads and their raw responses are redacted and are not reprodu
 | Band 6 BIN | Band 6 | Not attempted; rejected by signature validator | Not attempted | Not tested |
 
 These cases must not be collapsed into a single "upload supported" result. The Band 8-origin file is the positive compatibility control. The Band 10-origin files show that transport/install acceptance can occur without correct rendering. Band 4 and Band 6 samples are currently rejected before upload. No support for Band 4, Band 6 or Band 10 is claimed by these tests.
+
+## BLE interruption, command timeouts and state reconciliation
+
+This section records the implementation decisions made after reviewing physical-device diagnostics. The log excerpts are sanitized summaries of the observed event sequence, not complete raw logs.
+
+### Why the command watchdogs were added
+
+**[MEASURED] Physical-device interruption test — 2026-11-24**
+
+On the Xiaomi Smart Band 8 M2239B1 / firmware 2.3.14:
+
+- An install of a 750,572-byte file was accepted with `resumePosition = 0`.
+- The transfer was split into 368 parts of 2,048 bytes.
+- Bluetooth was turned off after approximately 60 parts.
+- The diagnostic sequence recorded `bluetooth_off` followed by channel release. No upload continuation or automatic retry occurred, and no terminal `Command{4,5}` install result was received for that interrupted attempt.
+- After Bluetooth was restored, a reconnect/authentication attempt returned `wrong_key`. This is a separate authentication failure; it does not establish that the interrupted upload changed the key.
+- The user then explicitly started a new installation attempt. The new attempt again negotiated `resumePosition = 0`, sent all 368 parts, and received acknowledgements for all parts. The band then returned `Command{4,5}` success for face ID `167210065`.
+
+**Implementation consequence:** an interrupted transfer ends. Freeband does not resume a partial offset, restart the transfer, or start another attempt automatically. A fresh attempt is possible only after an explicit user action and begins again with preparation and upload negotiation.
+
+### Missing activation acknowledgement
+
+**[MEASURED] Physical-device observation — 2026-11-24**
+
+After the successful 368-part transfer and successful `Command{4,5}` result:
+
+- Freeband sent the activation command.
+- The activation acknowledgement timed out.
+- The user observed that the band had in fact switched to and displayed the new face.
+- A later manual inventory refresh showed the new face as active.
+
+This demonstrates why a missing command reply cannot be treated as proof that the command was not applied. The activation reconciliation path therefore performs a read-only inventory request after an activation reply timeout and confirms the requested active ID; it never resends the activation command.
+
+**Important distinction:** this protocol-level reconciliation is attempted before the operation is finally marked failed. If it cannot confirm the requested active face, the UI's mutation-failure alert is shown. When the user acknowledges that alert, the UI performs its separate, single inventory refresh.
+
+### V1 command queue and acknowledgement watchdogs
+
+The V1 command characteristic (0052) serializes messages. A watch-face command can wait behind another message before it is eligible to receive a transport acknowledgement. A single response timeout would incorrectly count queue waiting as device response time.
+
+The implementation therefore tracks tagged watch-face command messages in two stages:
+
+1. **Queue wait:** if a tagged command is queued behind an existing message and remains queued for 30 seconds, fail the current operation.
+2. **Transport acknowledgement:** once the tagged message leaves the per-characteristic FIFO and is handed to the shared BLE write path, start a separate 30-second watchdog for its V1 acknowledgement.
+3. **Command response:** only after the transport acknowledgement does the command-specific response timer begin.
+
+The `taggedMessageStarted` event marks dispatch from the characteristic FIFO to the BLE writer; it is not proof of over-the-air delivery. The acknowledgement watchdog intentionally also covers writer backpressure and a missing V1 acknowledgement. Queue, pending-acknowledgement and callback tokens are cleared when the session is reset or released.
+
+These watchdogs apply only to tagged watch-face command messages. They do not introduce a global BLE queue, change unrelated sync behavior, or automatically retry a command. Upload data parts on 0055 retain their separate per-part acknowledgement and timeout handling.
+
+### Unsolicited / late acknowledgement diagnostics
+
+**[DIAGNOSTIC] Log review after connection interruption — 2026-11-24**
+
+After the Bluetooth interruption/reconnection sequence, the diagnostics included messages equivalent to:
+
+```text
+chunk acknowledgement ... with no chunked message in flight
+acknowledgement ... with no single message in flight
+```
+
+These indicate that an acknowledgement notification was received when the corresponding local V1 channel had no matching in-flight message. A delayed notification from the interrupted connection is one plausible explanation, but the logs do not prove its origin. The messages remain diagnostic warnings; they are not treated as successful acknowledgements for a later command. The subsequent full manual upload completed with all 368 parts acknowledged.
+
+### UI failure policy
+
+The UI distinguishes device mutations from reads and local file work:
+
+- **Install, delete and activate/set:** a failed operation shows a blocking alert. The operation is never repeated automatically. When the user acknowledges the alert, Freeband performs exactly one read-only installed-face inventory refresh to establish the band's current state.
+- **Inventory/list reads:** show an inline error in the watch-face section. No blocking alert and no automatic follow-up read.
+- **File selection, local parsing, preview analysis and compatibility diagnostics:** show a local inline message. They do not trigger a BLE operation or inventory refresh.
+- **Retries:** no automatic retry, restart, continuation or mutation loop is permitted. A new mutation attempt requires an explicit user action.
+
+The separate activation-timeout reconciliation described above remains a narrowly scoped read-only check used to decide whether an activation whose reply was lost actually took effect. It does not repeat the activation command.
+
