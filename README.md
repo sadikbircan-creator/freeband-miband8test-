@@ -2,7 +2,7 @@
 
 # Freeband
 
-Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. The Mi Band 8 is also supported on this fork for watch-face management, including importing and installing custom `.bin` faces. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
+Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active on iPhone without Mi Fitness or a Xiaomi account. Freeband also supports the Xiaomi Smart Band 8. On 2026-11-23, Freeband connected to and authenticated with one physical Xiaomi Smart Band 8 (device model identifier M2239B1, firmware 2.3.14); the watch-face operations listed below were also exercised on that unit. This is the only Band 8 hardware/firmware combination tested; other revisions remain unverified. Watch-face management is implemented only for the Band 8 profile and is not enabled for other device families. Freeband talks to the band directly over Bluetooth LE, and your data stays on your phone.
 
 <p>
   <img src="docs/img/today.png" width="200" alt="Today: sleep, recovery and strain scores">
@@ -19,6 +19,7 @@ Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1
 
 | Feature | State |
 |---|---|
+| Xiaomi Smart Band 8 app support | [TESTED] Freeband connected and authenticated on Xiaomi Smart Band 8, device model identifier M2239B1, firmware 2.3.14 (2026-11-23). This does not establish compatibility with other Band 8 revisions. |
 | Authentication and the encrypted channel (BLE V2) | verified on a Band 10 Pro |
 | Battery, live steps, heart rate and calories | verified |
 | Notifications from Freeband, find band (vibrate), clock sync | verified |
@@ -26,7 +27,7 @@ Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1
 | Redmi Watch 5 Active: authentication, battery, live stats, and fetching and parsing its daily summary, per-minute and sleep files | verified on firmware 2.2.105 |
 | Xiaomi Watch S1 Active, on the older BLE V1 channel: authentication, battery, live stats, notifications, its activity files, and sleep sessions from the watch's fell-asleep and woke-up events. The watch ignores Find, so Freeband hides it | verified on firmware 1.4.174 |
 | Find Phone: with Stay connected on (Band tab), Freeband keeps a session open in the background, and the watch's Find Phone rings the iPhone, also locked and on silent. Mi Fitness can't connect while it's on ([docs/STAY-CONNECTED.md](docs/STAY-CONNECTED.md)) | verified on a Xiaomi Watch S1 Active, firmware 1.4.174; a whole night idle not tested yet |
-| Mi Band 8, on BLE V1 | Tested and verified on Band 8. ([#4](https://github.com/cobanov/freeband/issues/4)) |
+| Mi Band 8 watch-face management | Implemented only for the Band 8 profile; not enabled for other device families. [TESTED] On Xiaomi Smart Band 8 M2239B1, firmware 2.3.14: listing, activation, deletion of removable inactive faces, BIN preview and installation were exercised. Band 8-origin samples displayed previews. Some Band 10-origin samples were accepted by this Band 8's installer but rendered incorrectly; this does not mean Band 10 is supported. Other Band 8 revisions and watch-face operations on other device families have not been tested. |
 | Parsing them: per-minute data, daily summary, sleep and sleep stages, manual readings | implemented and tested against fixtures; not yet checked with real files from a Band 10 |
 | Sleep, Recovery and Strain scores with contributors and confidence | implemented (algorithm v1) |
 | Worth noticing: what stands out today against your own normal (resting heart rate, HRV, sleep debt, sleep timing, hard days on low recovery) | implemented and tested (v1 thresholds, not validated on real weeks yet) |
@@ -35,7 +36,6 @@ Read your Xiaomi Smart Band 10 / 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1
 | The account server (REST API, web panel, invites) | removed on 2026-11-14: nobody used it. The website stays |
 | Health monitoring settings on the band: heart rate interval, heart rate during sleep, blood oxygen, all-day stress (Band tab) | reading verified on a Band 10 Pro (firmware 3.201.026), and writing the heart rate interval; the other writes not tried yet |
 | Alarms, Do Not Disturb and weather | not built yet |
-| Mi Band 8 watch-face management: list installed faces, activate and delete removable inactive faces, import and preview external `.bin` files, and install custom faces. Duplicate IDs are detected; existing faces are never deleted automatically | implemented and tested on a Mi Band 8 |
 | Background sync: a sync finishes after you leave the app, iOS's background refresh runs one, and with Stay connected on the band coming back in range or changing state starts one ([docs/STAY-CONNECTED.md](docs/STAY-CONNECTED.md) section 4.1) | implemented; not tried on a band yet |
 | Clear the band after sync (off by default): finished minute files and past files that Freeband has stored and fully parsed are acknowledged at the next sync, and the band deletes them | implemented; not tried on a band yet |
 | A morning summary notification, the first time a background sync brings the day's scores | implemented; not tried on a band yet |
@@ -64,9 +64,10 @@ The full write-up, with source references:
 - [`docs/ACTIVITY.md`](docs/ACTIVITY.md): activity file formats.
 - [`docs/PLAN.md`](docs/PLAN.md): product plan and score formulas.
 - [`docs/BLE-V1.md`](docs/BLE-V1.md): the older BLE V1 channel, and what the Watch S1 Active showed.
+- [`docs/WATCH-FACES.md`](docs/WATCH-FACES.md): watch-face protocol sources, Band 8 profile boundaries, compatibility analysis and physical-device validation.
 - [`docs/STAY-CONNECTED.md`](docs/STAY-CONNECTED.md): Stay connected (the held session) and Find Phone.
 
-The docs are in Turkish, except `docs/BLE-V1.md` and `docs/STAY-CONNECTED.md`.
+The docs are in Turkish, except `docs/BLE-V1.md`, `docs/STAY-CONNECTED.md` and `docs/WATCH-FACES.md`.
 
 ## Repository
 
@@ -81,6 +82,9 @@ The docs are in Turkish, except `docs/BLE-V1.md` and `docs/STAY-CONNECTED.md`.
 Running the tests:
 
 ```sh
+# protocol vectors (V2, V1, watch-face parsing/preview and compatibility)
+cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
+
 # activity parsers (Swift) and the Python reference
 cd ios/tests/activity/swift && swiftc ../../../Freeband/Band/ActivityFiles.swift main.swift -o /tmp/act && /tmp/act
 cd ios/tests/activity && python3 activity_ref.py --selftest
@@ -94,7 +98,7 @@ cd hub && npm install && npx tsc --noEmit && npx vitest run
 
 ## Try it yourself
 
-Freeband isn't on the App Store yet, so for now you build it from source. You need an iPhone with iOS 17 or later, a Band 10, 10 Pro, Redmi Watch 5 Active or Xiaomi Watch S1 Active for the main feature set. This fork also includes tested Mi Band 8 watch-face management. Building requires a Mac with Xcode 27 and a free Apple ID. The same guide with more detail is at [freeband.cobanov.dev/guide](https://freeband.cobanov.dev/guide).
+Freeband isn't on the App Store yet, so for now you build it from source. You need an iPhone with iOS 17 or later and a supported band, including the Xiaomi Smart Band 8. Building requires a Mac with Xcode 27 and a free Apple ID. The same guide with more detail is at [freeband.cobanov.dev/guide](https://freeband.cobanov.dev/guide).
 
 1. **Pair the band with Mi Fitness once**, if it isn't already, and let it sync. This is the only time you need Mi Fitness: Xiaomi's server creates the band's key during pairing.
 2. **Check the key folder.** In the Files app, On My iPhone should show a `Mi Fitness` folder.
@@ -115,6 +119,7 @@ Freeband isn't on the App Store yet, so for now you build it from source. You ne
    - Trust your developer certificate under Settings → General → VPN & Device Management.
 
    With SideStore or AltStore on the iPhone, you can skip steps 4 and 5: `sh tools/build-ipa.sh` (from `ios/`) writes an unsigned `build/Freeband.ipa`, which they sign with your Apple ID when you install it. AirDropped to the iPhone, the file lands in Files › Downloads.
+
 6. **Read the key.** In Freeband, tap Get started, then Choose folder, then go to Browse → On My iPhone → Mi Fitness → Open.
 7. **Connect.** Close Mi Fitness from the app switcher, keep the band close and tap Connect.
 8. **Keep Mi Fitness out of the way.** Turn off its Background App Refresh or offload it (see below).

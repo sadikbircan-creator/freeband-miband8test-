@@ -11,6 +11,7 @@ enum MiWatchFaceUpload {
         case emptyFile
         case invalidChunkSize
         case invalidResumeOffset
+        case resumeNotSupported
         case tooManyParts
     }
 
@@ -41,19 +42,21 @@ enum MiWatchFaceUpload {
         return command.data
     }
 
-    /// Builds [00, type, md5, sizeLE, file-from-resume, crc32LE] and
+    /// Builds a full-file payload [00, type, md5, sizeLE, file, crc32LE] and
     /// wraps it in BLE V1 data parts: [total u16 LE, index u16 LE, payload].
+    /// Partial resume offsets are deliberately rejected; each user-started attempt sends the full file.
     static func parts(file: Data, chunkSize: Int = defaultChunkSize,
                       resumePosition: Int = 0) throws -> [Data] {
         guard !file.isEmpty else { throw Failure.emptyFile }
         guard chunkSize > 4 else { throw Failure.invalidChunkSize }
         guard resumePosition >= 0 && resumePosition <= file.count else { throw Failure.invalidResumeOffset }
+        guard resumePosition == 0 else { throw Failure.resumeNotSupported }
 
         let digest = md5(file)
         var body = Data([0, UInt8(dataType)])
         body.append(digest)
         appendUInt32LE(UInt32(file.count), to: &body)
-        body.append(contentsOf: file.dropFirst(resumePosition))
+        body.append(file)
         appendUInt32LE(crc32(body), to: &body)
 
         // BLE V1 has no additional per-part link overhead; the four-byte
@@ -84,7 +87,9 @@ enum MiWatchFaceUpload {
             throw ParseFailure.invalidMagic
         }
         let faceCount = Int(bytes[0x1C]) | (Int(bytes[0x1D]) << 8)
-        guard faceCount == 2 else { throw ParseFailure.missingAlwaysOnFace(faceCount) }
+        // At least one style must be declared. One-style/no-AOD packages are a compatibility
+        // warning, not a parse rejection; different profiles can define their own expectation.
+        guard faceCount > 0 else { throw ParseFailure.invalidFaceCount }
 
         func headerString(_ range: Range<Int>) -> String? {
             let raw = Data(bytes[range])
@@ -92,10 +97,17 @@ enum MiWatchFaceUpload {
             guard !trimmed.isEmpty else { return nil }
             return String(data: Data(trimmed), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard let id = headerString(0x28..<0x31), id.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || $0 == 95 || $0 == 45 }) else {
+        // Read the decimal ID up to its NUL terminator, bounded to the header region before the name.
+        let idRegion = bytes[0x28..<0x68]
+        guard let idTerminator = idRegion.firstIndex(of: 0) else {
             throw ParseFailure.invalidID
         }
-        let name = headerString(0x68..<0xA4) ?? "Imported watch face"
+        let idBytes = idRegion[..<idTerminator]
+        guard !idBytes.isEmpty, idBytes.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+              let id = String(data: Data(idBytes), encoding: .ascii) else {
+            throw ParseFailure.invalidID
+        }
+        let name = headerString(0x68..<0xA4) ?? String(localized: "Imported watch face")
         return ImportedWatchFace(id: id, name: name, data: data, faceCount: faceCount)
     }
 
@@ -105,20 +117,21 @@ enum MiWatchFaceUpload {
         case fileTooLarge
         case invalidMagic
         case invalidID
-        case missingAlwaysOnFace(Int)
+        case invalidFaceCount
 
         var errorDescription: String? {
             switch self {
-            case .headerTooShort: return "The file is shorter than a Mi Band 8 watch-face header."
-            case .fileTooLarge: return "The watch-face file is larger than the 16 MB safety limit."
-            case .invalidMagic: return "This file does not have a recognized Xiaomi watch-face signature."
-            case .invalidID: return "The watch-face ID in the file is missing or invalid."
-            case .missingAlwaysOnFace(let count):
-                return "This file contains \(count) face style(s). Mi Band 8 requires both the normal and always-on styles."
+            case .headerTooShort: return String(localized: "The file is shorter than a Mi Band 8 watch-face header.")
+            case .fileTooLarge: return String(localized: "The watch-face file is larger than the 16 MB safety limit.")
+            case .invalidMagic: return String(localized: "This file does not have a recognized Xiaomi watch-face signature.")
+            case .invalidID: return String(localized: "The watch-face ID in the file is missing or invalid.")
+            case .invalidFaceCount:
+                return String(localized: "This file does not declare any watch-face styles.")
             }
         }
     }
 
+    // Mi Band's watch-face upload request requires MD5; retain it for protocol compatibility.
     static func md5(_ data: Data) -> Data {
         var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
         data.withUnsafeBytes { bytes in

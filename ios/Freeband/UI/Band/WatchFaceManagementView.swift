@@ -14,9 +14,15 @@ struct WatchFaceManagementView: View {
     @State private var didAutoLoad = false
     @State private var showingImporter = false
     @State private var importedFace: ImportedWatchFace?
-    @State private var importedPreview: MiWatchFacePreview?
+    @State private var compatibilityReport: WatchFaceCompatibilityReport?
     @State private var showingInstallConfirmation = false
+    @State private var activeAlert: WatchFaceAlert?
     @State private var importError: String?
+
+    private struct WatchFaceAlert {
+        let title: String
+        let message: String
+    }
 
     private var isBusy: Bool { link.phase.isBusy }
     private var isInstalling: Bool {
@@ -24,6 +30,12 @@ struct WatchFaceManagementView: View {
         return false
     }
     private var isLoading: Bool { isBusy && (link.purpose == .watchFaces || isInstalling) }
+    private var watchFaceProfile: WatchFaceProfile? {
+        WatchFaceProfile.resolve(
+            isBand8: Band.family(name: band.name, model: band.model) == .band8
+        )
+    }
+
     private var matchingInstalledFace: WatchFace? {
         guard let importedFace else { return nil }
         return link.watchFaces.first(where: { $0.id == importedFace.id })
@@ -31,6 +43,17 @@ struct WatchFaceManagementView: View {
 
     var body: some View {
         List {
+            if watchFaceProfile == nil {
+                Section {
+                    Label(String(localized: "Watch-face management is not yet supported for this device."), systemImage: "hourglass")
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "A tested watch-face profile is not available for this band yet."))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(String(localized: "Work in progress"))
+                }
+            } else {
             Section {
                 if isLoading {
                     HStack(spacing: 12) {
@@ -43,16 +66,11 @@ struct WatchFaceManagementView: View {
 
                 if link.watchFaces.isEmpty && !isLoading {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(String(localized: "No watch faces loaded"))
+                        Text(String(localized: "No watch faces installed"))
                             .font(.headline)
                         Text(String(localized: "Tap refresh to read the watch faces installed on your band."))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        if case .failed = link.phase {
-                            Text(link.phase.label)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
                     }
                     .padding(.vertical, 8)
                 } else {
@@ -63,7 +81,27 @@ struct WatchFaceManagementView: View {
             } header: {
                 Text(String(localized: "Installed on the band"))
             } footer: {
-                Text(String(localized: "Close Mi Fitness before managing watch faces. Only custom inactive faces can be deleted."))
+                Text(String(localized: "Close Mi Fitness before managing watch faces. Only faces the band marks as deletable can be deleted, and active faces cannot be deleted."))
+            }
+
+            if case .failed = link.phase, link.purpose.isWatchFaceOperation {
+                Section {
+                    Text(link.phase.label)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                } header: {
+                    Text(String(localized: "Watch-face operation failed"))
+                }
+            }
+
+            if let importError {
+                Section {
+                    Text(importError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                } header: {
+                    Text(String(localized: "Couldn't open watch-face file"))
+                }
             }
 
             Section {
@@ -76,7 +114,7 @@ struct WatchFaceManagementView: View {
 
                 if let importedFace {
                     VStack(alignment: .leading, spacing: 10) {
-                        if let preview = importedPreview, let previewImage = makePreviewImage(preview) {
+                        if let preview = compatibilityReport?.preview, let previewImage = makePreviewImage(preview) {
                             Image(uiImage: previewImage)
                                 .resizable()
                                 .scaledToFit()
@@ -93,9 +131,38 @@ struct WatchFaceManagementView: View {
                         Text("ID: \(importedFace.id)")
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
-                        Text("\(String(localized: "Mi Band 8 watch-face file")) · \(importedFace.data.count) bayt")
+                        Text("\(String(localized: "Xiaomi watch-face file")) · \(importedFace.data.count) \(String(localized: "bytes"))")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        if let previewSummary = compatibilityReport?.previewSummary {
+                            Text(previewSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if compatibilityReport != nil {
+                            Text(String(localized: "These checks cover preview metadata and style count only. They do not verify widget layout, data sources or AOD rendering on the band."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let report = compatibilityReport, report.hasWarnings {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label(String(localized: "Potential compatibility issue"),
+                                      systemImage: "exclamationmark.triangle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                ForEach(report.warnings) { warning in
+                                    Text(warning.message)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(String(localized: "This check is advisory only. You can still continue with installation."))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        }
                         if matchingInstalledFace != nil {
                             Label(String(localized: "A watch face with this ID is already installed"), systemImage: "exclamationmark.triangle.fill")
                                 .font(.subheadline.weight(.semibold))
@@ -119,7 +186,8 @@ struct WatchFaceManagementView: View {
             } header: {
                 Text(String(localized: "Import a watch face"))
             } footer: {
-                Text(String(localized: "Only Mi Band 8 binary watch faces with both the normal and always-on styles are accepted. Keep the band charged and close Mi Fitness during installation."))
+                Text(String(localized: "Files with a recognized Xiaomi watch-face signature and ID can be imported. Compatibility warnings are advisory and do not block installation. Keep the band charged and close Mi Fitness during installation."))
+            }
             }
         }
         .listStyle(.insetGrouped)
@@ -127,18 +195,52 @@ struct WatchFaceManagementView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: refresh) {
-                    Image(systemName: "arrow.clockwise")
+            if watchFaceProfile != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: refresh) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(Text(String(localized: "Refresh watch faces")))
+                    .disabled(isBusy)
                 }
-                .accessibilityLabel(Text(String(localized: "Refresh watch faces")))
-                .disabled(isBusy)
             }
         }
         .task {
-            guard !didAutoLoad else { return }
+            guard watchFaceProfile != nil, !didAutoLoad else { return }
+            guard link.watchFaces.isEmpty else {
+                didAutoLoad = true
+                return
+            }
+            // Do not consume the one automatic load attempt while another BLE session owns the link.
+            guard !isBusy else { return }
             didAutoLoad = true
-            if link.watchFaces.isEmpty && !isBusy { refresh() }
+            refresh()
+        }
+        .onChange(of: link.phase) { _, phase in
+            if case .failed(let message) = phase {
+                // Only failed mutations that can change the installed inventory need a blocking
+                // acknowledgement followed by one read-only refresh. Inventory-read failures and
+                // all other errors remain inline and never trigger another operation.
+                switch link.purpose {
+                case .watchFaceSet, .watchFaceDelete, .watchFaceInstall:
+                    activeAlert = WatchFaceAlert(
+                        title: String(localized: "Watch-face operation failed"),
+                        message: "\(message)\n\n\(String(localized: "The failed operation will not be repeated. After you acknowledge this message, Freeband will read the installed watch-face list again."))"
+                    )
+                default:
+                    break
+                }
+            }
+            guard watchFaceProfile != nil, !didAutoLoad, link.watchFaces.isEmpty else { return }
+            // If this screen was opened during sync, run its requested initial read only after a
+            // normal/partial session end. A failed session is never followed by an automatic retry.
+            switch phase {
+            case .done, .partial(_):
+                didAutoLoad = true
+                refresh()
+            default:
+                break
+            }
         }
         .fileImporter(
             isPresented: $showingImporter,
@@ -146,16 +248,18 @@ struct WatchFaceManagementView: View {
             allowsMultipleSelection: false
         ) { result in
             do {
+                importError = nil
                 let urls = try result.get()
                 guard let url = urls.first else { return }
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                 let data = try Data(contentsOf: url)
-                importedFace = try MiWatchFaceUpload.parseFile(data)
-                importedPreview = MiWatchFacePreview.decode(data)
+                let profile = watchFaceProfile
+                importedFace = try profile?.parseFile(data)
+                compatibilityReport = importedFace.flatMap { profile?.analyze($0) }
             } catch {
                 importedFace = nil
-                importedPreview = nil
+                compatibilityReport = nil
                 importError = error.localizedDescription
             }
         }
@@ -172,13 +276,16 @@ struct WatchFaceManagementView: View {
         } message: {
             Text(String(localized: "The watch will be checked again before installation. Any matching face must be deleted manually first."))
         }
-        .alert(String(localized: "Couldn't open watch-face file"), isPresented: Binding(
-            get: { importError != nil },
-            set: { if !$0 { importError = nil } }
+        .alert(activeAlert?.title ?? "", isPresented: Binding(
+            get: { activeAlert != nil },
+            set: { if !$0 { activeAlert = nil } }
         )) {
-            Button(String(localized: "OK"), role: .cancel) { importError = nil }
+            Button(String(localized: "OK"), role: .cancel) {
+                activeAlert = nil
+                refresh()
+            }
         } message: {
-            Text(importError ?? "")
+            Text(activeAlert?.message ?? "")
         }
         .confirmationDialog(
             String(localized: "Delete this watch face?"),

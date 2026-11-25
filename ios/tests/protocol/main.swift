@@ -1,5 +1,5 @@
 // Prints MiProtocol outputs for fixed inputs; check_vectors.py recomputes them independently.
-// Build: swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift main.swift -o /tmp/mitest
+// Build: swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest
 // Run with TZ=UTC: check_vectors.py formats notify_cmd's timestamp in UTC.
 import CryptoKit
 import Foundation
@@ -43,6 +43,9 @@ func fmt(_ o: MiV1Channel.Output) -> [String] {
         switch event {
         case .message(let data): return "msg:" + hex(data)
         case .acknowledged(let ok): return "ack:\(ok)"
+        case .taggedMessageQueued(let token): return "queued:\(token)"
+        case .taggedMessageStarted(let token): return "started:\(token)"
+        case .taggedAcknowledged(let token, let ok): return "tagack:\(token):\(ok)"
         case .undecryptable(let n): return "bad:\(n)"
         case .unexpected: return "?"
         }
@@ -67,6 +70,30 @@ let inBig = Data((0..<41).map { UInt8(255 - $0) })
 // plain single writes, the second waiting for the first one's acknowledgement
 var chA = MiV1Channel()
 let plainQueue = [fmt(chA.send(nonceCmd)), fmt(chA.send(batteryCmd)), fmt(chA.receive(d("00000300")))]
+
+// Tagged transport ACKs stay associated with the message that was actually in flight,
+// including when a second message waits in the same characteristic queue.
+var chTagged = MiV1Channel()
+let taggedFirst = chTagged.send(nonceCmd, acknowledgementToken: 101)
+let taggedQueued = chTagged.send(batteryCmd, acknowledgementToken: 102)
+let taggedFirstAck = chTagged.receive(d("00000300"))
+let taggedSecondAck = chTagged.receive(d("00000300"))
+precondition(taggedFirst.events.contains(.taggedMessageStarted(101)))
+precondition(taggedQueued.writes.isEmpty)
+precondition(taggedQueued.events == [.taggedMessageQueued(102)])
+precondition(!taggedQueued.events.contains(.taggedMessageStarted(102)))
+precondition(taggedFirstAck.events.contains(.taggedAcknowledged(101, true)))
+precondition(taggedFirstAck.events.contains(.taggedMessageStarted(102)))
+precondition(taggedSecondAck.events.contains(.taggedAcknowledged(102, true)))
+
+// The same token survives the chunked-message handshake and its final acknowledgement.
+var chTaggedChunk = MiV1Channel(maxWrite: 20)
+let taggedChunkStart = chTaggedChunk.send(big, acknowledgementToken: 201)
+_ = chTaggedChunk.receive(d("00000101"))
+_ = chTaggedChunk.receive(d("000001050200"))
+let taggedChunkAck = chTaggedChunk.receive(d("00000100"))
+precondition(taggedChunkStart.events.contains(.taggedMessageStarted(201)))
+precondition(taggedChunkAck.events.contains(.taggedAcknowledged(201, true)))
 
 // encrypted single writes count from 1
 var chB = MiV1Channel()
@@ -131,10 +158,11 @@ let findPhoneParsed = [
 ]
 
 // Watch-face protobuf: list request, repeated inventory items, action payloads and acknowledgements.
+let longFaceID = "561170642123"
 var faceA = PBWriter()
 faceA.string(1, "1001"); faceA.string(2, "Classic"); faceA.bool(3, true); faceA.bool(4, false)
 var faceB = PBWriter()
-faceB.string(1, "2002"); faceB.string(2, "Custom"); faceB.bool(3, false); faceB.bool(4, true)
+faceB.string(1, longFaceID); faceB.string(2, "Custom"); faceB.bool(3, false); faceB.bool(4, true)
 var faceList = PBWriter()
 faceList.message(1, faceA); faceList.message(1, faceB)
 var watchfacePayload = PBWriter()
@@ -144,10 +172,12 @@ watchfaceResponse.varint(1, 4); watchfaceResponse.varint(2, 0); watchfaceRespons
 let parsedWatchFaces = MiWatchFaceProtocol.readList(from: PBMessage(watchfaceResponse.data)!)!
 precondition(parsedWatchFaces.count == 2)
 precondition(parsedWatchFaces[0] == WatchFace(id: "1001", name: "Classic", isActive: true, canDelete: false))
-precondition(parsedWatchFaces[1] == WatchFace(id: "2002", name: "Custom", isActive: false, canDelete: true))
+precondition(parsedWatchFaces[1] == WatchFace(id: longFaceID, name: "Custom", isActive: false, canDelete: true))
 precondition(hex(MiWatchFaceProtocol.listCommand()) == "08041000")
-precondition(hex(MiWatchFaceProtocol.setCommand(id: "2002")) == "080410013206120432303032")
-precondition(hex(MiWatchFaceProtocol.deleteCommand(id: "2002")) == "080410023206120432303032")
+precondition(hex(MiWatchFaceProtocol.setCommand(id: longFaceID)) == "08041001320e120c353631313730363432313233")
+precondition(hex(MiWatchFaceProtocol.deleteCommand(id: longFaceID)) == "08041002320e120c353631313730363432313233")
+precondition(hex(MiWatchFaceUpload.installCommand(faceID: longFaceID, size: 379168))
+    == "08041004321432120a0c35363131373036343231323310a09217")
 var watchfaceAckBody = PBWriter(); watchfaceAckBody.bool(4, true)
 var watchfaceAck = PBWriter(); watchfaceAck.varint(1, 4); watchfaceAck.varint(2, 1); watchfaceAck.message(6, watchfaceAckBody)
 precondition(MiWatchFaceProtocol.acknowledgement(from: PBMessage(watchfaceAck.data)!) == true)
@@ -186,19 +216,163 @@ var metadataFile = Data(repeating: 0, count: 0xA8)
 metadataFile.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
 metadataFile[0x1C] = 2
 metadataFile.replaceSubrange(0x20..<0x24, with: Data([0xA8, 0, 0, 0]))
-metadataFile.replaceSubrange(0x28..<0x31, with: Data("561170642".utf8))
+metadataFile.replaceSubrange(0x28..<0x34, with: Data(longFaceID.utf8))
 metadataFile.replaceSubrange(0x68..<0xA4, with: Data("Atatürk".utf8) + Data(repeating: 0, count: 52))
 let compressedPreview = Data([0xE0, 0x21, 0xA5, 0x5A, 0x82, 0, 0, 0, 4, 0, 0xF8])
 metadataFile.append(contentsOf: [3, 0, 0, 0, 2, 0, 2, 0, UInt8(compressedPreview.count), 0, 0, 0])
 metadataFile.append(compressedPreview)
 let parsedMetadata = try! MiWatchFaceUpload.parseFile(metadataFile)
-precondition(parsedMetadata.id == "561170642")
+precondition(parsedMetadata.id == longFaceID)
+precondition(WatchFaceProfile.resolve(isBand8: true) != nil)
+precondition(WatchFaceProfile.resolve(isBand8: false) == nil)
+do {
+    _ = try MiWatchFaceUpload.parts(file: uploadSample, chunkSize: 2048, resumePosition: 1)
+    preconditionFailure("nonzero watch-face resume position must be rejected")
+} catch MiWatchFaceUpload.Failure.resumeNotSupported {
+    // Expected: a partial transfer is never resumed; a fresh user retry restarts preparation.
+} catch {
+    preconditionFailure("unexpected resume rejection: \(error)")
+}
 precondition(parsedMetadata.name == "Atatürk")
 precondition(parsedMetadata.faceCount == 2)
+
+var nonDecimalIDFile = metadataFile
+nonDecimalIDFile.replaceSubrange(0x28..<0x34, with: Data("56117064A123".utf8))
+do {
+    _ = try MiWatchFaceUpload.parseFile(nonDecimalIDFile)
+    preconditionFailure("a non-decimal watch-face ID must be rejected")
+} catch MiWatchFaceUpload.ParseFailure.invalidID {
+    // Expected: watch-face IDs are decimal digits only.
+} catch {
+    preconditionFailure("unexpected non-decimal ID rejection: \(error)")
+}
+
+var unterminatedIDFile = metadataFile
+unterminatedIDFile.replaceSubrange(0x28..<0x68, with: Data(repeating: 0x31, count: 0x40))
+do {
+    _ = try MiWatchFaceUpload.parseFile(unterminatedIDFile)
+    preconditionFailure("an unterminated watch-face ID must be rejected")
+} catch MiWatchFaceUpload.ParseFailure.invalidID {
+    // Expected: the ID field must contain a NUL terminator.
+} catch {
+    preconditionFailure("unexpected unterminated ID rejection: \(error)")
+}
+
+var zeroStyleFile = metadataFile
+zeroStyleFile[0x1C] = 0
+do {
+    _ = try MiWatchFaceUpload.parseFile(zeroStyleFile)
+    preconditionFailure("a BIN with no declared face styles must be rejected")
+} catch MiWatchFaceUpload.ParseFailure.invalidFaceCount {
+    // Expected: a file must contain at least one style to be structurally parseable.
+} catch {
+    preconditionFailure("unexpected zero-style file rejection: \(error)")
+}
+
+
+func makePreviewFixture(sign: UInt8, bytesPerPixel: Int, decodedLength: Int, encoded: [UInt8]) -> Data {
+    var file = Data(repeating: 0, count: 0xA8)
+    file.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
+    file[0x1C] = 2
+    file.replaceSubrange(0x20..<0x24, with: Data([0xA8, 0, 0, 0]))
+    file.replaceSubrange(
+        0x28..<0x68,
+        with: Data(longFaceID.utf8) + Data(repeating: 0, count: 64 - longFaceID.utf8.count)
+    )
+    file.replaceSubrange(0x68..<0xA4, with: Data("RLE fixture".utf8) + Data(repeating: 0, count: 49))
+
+    var payload = Data([0xE0, 0x21, 0xA5, 0x5A])
+    let info = UInt32((decodedLength << 4) | bytesPerPixel)
+    for shift in stride(from: 0, through: 24, by: 8) {
+        payload.append(UInt8((info >> UInt32(shift)) & 0xFF))
+    }
+    payload.append(contentsOf: encoded)
+
+    var previewHeader = Data([sign, 0, 0, 0, 2, 0, 2, 0])
+    let length = UInt32(payload.count)
+    for shift in stride(from: 0, through: 24, by: 8) {
+        previewHeader.append(UInt8((length >> UInt32(shift)) & 0xFF))
+    }
+    file.append(previewHeader)
+    file.append(payload)
+    return file
+}
+
+// Exercise the literal branch of RLE v1 and both byte-oriented branches of RLE v2.
+let rle10Literal = MiWatchFacePreview.decode(makePreviewFixture(
+    sign: 3, bytesPerPixel: 2, decodedLength: 8,
+    encoded: [0x84, 0xF8, 0x00, 0x07, 0xE0, 0x1F, 0x00, 0xFF, 0xFF]
+))
+precondition(rle10Literal?.rgba.count == 16)
+
+let rle10Run = MiWatchFacePreview.decode(makePreviewFixture(
+    sign: 3, bytesPerPixel: 2, decodedLength: 8,
+    encoded: [0x04, 0xF8, 0x00]
+))
+precondition(rle10Run?.rgba.count == 16)
+if let rle10Run {
+    let firstPixel = Array(rle10Run.rgba[0..<4])
+    precondition((0..<4).allSatisfy { index in
+        Array(rle10Run.rgba[(index * 4)..<(index * 4 + 4)]) == firstPixel
+    })
+} else {
+    preconditionFailure("RLE v1 repeat record should decode")
+}
+
+let rle20Literal = MiWatchFacePreview.decode(makePreviewFixture(
+    sign: 14, bytesPerPixel: 1, decodedLength: 4,
+    encoded: [0x84, 0x10, 0x20, 0x30, 0x40]
+))
+precondition(rle20Literal?.rgba.count == 16)
+precondition(rle20Literal?.rgba[0] == 0x10)
+precondition(rle20Literal?.rgba[4] == 0x20)
+
+let rle20Run = MiWatchFacePreview.decode(makePreviewFixture(
+    sign: 14, bytesPerPixel: 1, decodedLength: 4,
+    encoded: [0x04, 0x7F]
+))
+precondition(rle20Run?.rgba.count == 16)
+precondition(rle20Run?.rgba[0] == 0x7F)
+
 let decodedPreview = MiWatchFacePreview.decode(metadataFile)!
 precondition(decodedPreview.width == 2)
 precondition(decodedPreview.height == 2)
 precondition(decodedPreview.rgba.count == 16)
+let compatibility = WatchFaceProfile.band8.analyze(parsedMetadata)
+precondition(compatibility.previewSize == WatchFacePreviewSize(width: 2, height: 2))
+precondition(compatibility.preview != nil)
+precondition(compatibility.warnings.contains(where: { $0.id == "previewDimensionsDiffer" }))
+
+let genericRules = WatchFaceCompatibilityRules(
+    previewReferenceSize: WatchFacePreviewSize(width: 2, height: 2),
+    previewReferenceLabel: "synthetic fixture",
+    expectedFaceCount: nil,
+    expectedFaceCountLabel: nil
+)
+let genericReport = WatchFaceCompatibilityAnalyzer.analyze(parsedMetadata, rules: genericRules)
+precondition(genericReport.warnings.isEmpty)
+
+
+var oneStyleFile = metadataFile
+oneStyleFile[0x1C] = 1
+let parsedOneStyle = try! MiWatchFaceUpload.parseFile(oneStyleFile)
+precondition(parsedOneStyle.faceCount == 1)
+let oneStyleReport = WatchFaceProfile.band8.analyze(parsedOneStyle)
+precondition(oneStyleReport.warnings.contains(where: { $0.id == "faceStyleCountDiffers" }))
+precondition(oneStyleReport.preview != nil)
+
+var undecodablePreviewFile = metadataFile
+undecodablePreviewFile[0xB4 + 8] = 0
+let undecodableFace = try! MiWatchFaceUpload.parseFile(undecodablePreviewFile)
+let undecodableReport = WatchFaceProfile.band8.analyze(undecodableFace)
+precondition(undecodableReport.warnings.contains(where: { $0.id == "previewDecodeFailed" }))
+precondition(undecodableReport.previewSize == WatchFacePreviewSize(width: 2, height: 2))
+
+var unreadablePreviewFile = metadataFile
+unreadablePreviewFile.replaceSubrange(0x20..<0x24, with: Data([0xFF, 0xFF, 0xFF, 0x7F]))
+let unreadableFace = try! MiWatchFaceUpload.parseFile(unreadablePreviewFile)
+let unreadableCompatibility = WatchFaceProfile.band8.analyze(unreadableFace)
+precondition(unreadableCompatibility.warnings == [.previewMetadataUnavailable])
 precondition(MiWatchFaceUpload.installCommand(faceID: "167210065", size: 379168).map { String(format: "%02x", $0) }.joined()
     == "080410043211320f0a0931363732313030363510a09217")
 
@@ -216,6 +390,25 @@ uploadChannel.authenticated()
 uploadChannel.incrementNonce = false
 let uploadChannelFrames = [fmt(uploadChannel.send(Data(repeating: 0x5A, count: 32)))]
 precondition(uploadChannel.counter == 1)
+
+var uploadChunkedChannel = MiV1Channel(maxWrite: 244)
+uploadChunkedChannel.cipher = v1Cipher
+uploadChunkedChannel.authenticated()
+uploadChunkedChannel.incrementNonce = false
+let uploadChunkedStart = uploadChunkedChannel.send(Data(repeating: 0x5A, count: 500))
+precondition(Array(uploadChunkedStart.writes[0].prefix(6)) == [0, 0, 0, 1, 3, 0])
+let uploadChunkedReady = uploadChunkedChannel.receive(d("00000101"))
+precondition(uploadChunkedReady.writes.count == 3)
+precondition(uploadChunkedReady.writes.allSatisfy { $0.count <= 244 })
+precondition(Array(uploadChunkedReady.writes[0].prefix(2)) == [1, 0])
+precondition(uploadChunkedChannel.counter == 1)
+let uploadChunkedDone = uploadChunkedChannel.receive(d("00000100"))
+precondition(uploadChunkedDone.events.count == 1)
+if case .acknowledged(let accepted) = uploadChunkedDone.events[0] {
+    precondition(accepted)
+} else {
+    preconditionFailure("upload channel should acknowledge the completed chunked payload")
+}
 
 // Health monitoring settings (docs/CAPABILITIES.md §9.1-9.3). hrBody is what a band could
 // return, with fields the app doesn't know (20, 21, a fixed32 22) that must come back unchanged.

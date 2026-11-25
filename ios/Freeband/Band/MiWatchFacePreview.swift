@@ -6,6 +6,33 @@ struct MiWatchFacePreview: Equatable {
     /// Premultiplied RGBA pixels, row-major.
     let rgba: Data
 
+    struct Metadata: Equatable {
+        let width: Int
+        let height: Int
+    }
+
+    /// Reads the embedded preview header without decoding its pixels.
+    /// Dimensions are reported as found; the device profile decides whether they are expected.
+    static func inspect(_ data: Data) -> Metadata? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 0x24 else { return nil }
+        func u16(_ offset: Int) -> Int {
+            Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
+        }
+        func u32(_ offset: Int) -> Int? {
+            let value = UInt64(bytes[offset]) | (UInt64(bytes[offset + 1]) << 8) |
+                (UInt64(bytes[offset + 2]) << 16) | (UInt64(bytes[offset + 3]) << 24)
+            return value <= UInt64(Int.max) ? Int(value) : nil
+        }
+        guard let offset = u32(0x20), offset > 0, offset <= bytes.count - 12 else { return nil }
+        let width = u16(offset + 4)
+        let height = u16(offset + 6)
+        guard width > 0, height > 0,
+              let payloadLength = u32(offset + 8), payloadLength > 0,
+              payloadLength <= bytes.count - offset - 12 else { return nil }
+        return Metadata(width: width, height: height)
+    }
+
     /// Decodes the main embedded preview into premultiplied RGBA pixels.
     /// Unsupported preview encodings simply produce no preview; the BIN itself remains untouched.
     static func decode(_ data: Data) -> MiWatchFacePreview? {

@@ -5,7 +5,7 @@ Instructions for coding agents (and people) changing this repository. The README
 ## Ground rules
 
 - **Write the protocol down first, then the code.** Freeband's code is MIT. Gadgetbridge is AGPL-3.0, so never translate its Java (or any other project's code) into Swift. Read the source, write the facts into the docs with `file:line` citations, then write Swift from the docs. `findings.md` §8 and the README's Credits say why.
-- **Mark every fact with its source.** `[CODE]` / `[KOD]`: read in a source. `[MEASURED]` / `[ÖLÇÜM]`: seen on a device. `[UNVERIFIED]` / `[TAHMİN]`: inferred. `findings.md` and most of `docs/` are in Turkish; keep a file's language when you edit it. `docs/BLE-V1.md` is in English.
+- **Mark every fact with its source.** `[CODE]` / `[KOD]`: read in a source. `[MEASURED]` / `[ÖLÇÜM]`: seen on a device. `[UNVERIFIED]` / `[TAHMİN]`: inferred. `findings.md` and most of `docs/` are in Turkish; keep a file's language when you edit it. `docs/BLE-V1.md`, `docs/STAY-CONNECTED.md` and `docs/WATCH-FACES.md` are in English. Watch-face research also uses `[SOURCE]`, `[MEASURED]`, `[TESTED]`, `[DIAGNOSTIC]` and `[NOT TESTED]` to distinguish external evidence, physical results, code/test outcomes, offline inspection and outstanding checks; do not treat these labels as interchangeable.
 - **A user's data stays out of the repo.** Raw activity files, logs, screenshots and photos of a band are health data. Use them to check the code, then encode what you learned as synthetic test data built from the measured values.
 - **A device's identifiers stay out too.** A Bluetooth address (MAC), the four-digit suffix of a band's Bluetooth name (it is the end of the address), a serial number, an auth key and a CoreBluetooth identifier all point at one person's band.
   - In code, tests, docs and commit messages, write a made-up one: `AA:BB:CC:DD:5E:6F`, `XiaomiWatchS1Active 5E6F`. In notes about a measured device, write `XXXX` for the suffix.
@@ -26,11 +26,28 @@ Instructions for coding agents (and people) changing this repository. The README
 8. **Record the result** in the docs as `[MEASURED]`, with the device, firmware and date.
 9. **Bump `ActivityIngest.parserVersion`** (with a comment line saying why) when a change alters what a stored file yields; stored files are parsed again at the next launch.
 
+## Mi Band 8 watch-face feature
+
+The watch-face feature is a deliberately isolated Band 8 profile, not a generic Xiaomi watch-face implementation. Keep protocol assumptions, source citations, physical test evidence, and known limitations in `docs/WATCH-FACES.md`; update that document whenever a code or behavior decision changes.
+
+- Keep profile selection explicit. Unsupported device families must not fall back to Band 8 commands, file parsing, or the FE95/0055 upload path.
+- Keep protocol framing and file parsing platform-independent. BLE session ownership, queueing, timers, and CoreBluetooth callbacks belong in `BandLink.swift`; UI behavior belongs in `WatchFaceManagementView.swift`.
+- A same-ID face is never removed or replaced automatically. Recheck the installed inventory immediately before upload; the user must delete a duplicate manually.
+- Never automatically retry, resume, restart, or continue a failed watch-face mutation or upload. A new mutation attempt requires a direct user action.
+- Only failed state-changing watch-face operations (install, delete, activate/set) use the blocking failure alert. After the user acknowledges it, perform exactly one read-only inventory refresh. Read-only list failures and local file selection/parsing/preview/compatibility errors stay inline and must not trigger another BLE operation.
+- Activation has one separate protocol-level exception: if the activation reply is missing, do not resend activation; perform a read-only inventory reconciliation to check whether the requested face became active. Record this separately from the post-alert refresh policy in `docs/WATCH-FACES.md`.
+- V1 command timing is staged: queue-wait watchdog, transport-ACK watchdog, then command-response timeout. `taggedMessageStarted` means the message left the per-characteristic FIFO and was handed to the BLE writer; it does not prove over-the-air delivery. Do not turn this feature-specific tracking into a global BLE queue or change unrelated sync scheduling without a separate design decision.
+- Preserve the distinction between transfer acceptance, install-result success, activation confirmation, inventory state, and visual compatibility. A successful transfer/install response is not proof that a foreign-family face renders correctly.
+- When recording diagnostics, include only sanitized event summaries and the relevant non-secret status/count/timeout lines. Never commit raw authentication request/response payloads, keys, MAC addresses, serials, CoreBluetooth identifiers, or personal notification content. Mark hypotheses (for example, delayed ACKs after reconnect) as unconfirmed.
+- Record physical results with exact model, firmware and date. Use `[MEASURED]` only when diagnostic evidence supports the physical result; use `[TESTED]` for user-observed results without retained logs; use `[DIAGNOSTIC]` for offline/log evidence that is not itself a physical-device measurement. Keep untested behavior explicitly marked.
+
+The focused protocol-vector command below includes watch-face parsing, preview and compatibility tests. 
+
 ## Tests
 
 ```sh
 # protocol vectors (V2, V1 and the local bind); needs python3 with `cryptography`. TZ=UTC: notify_cmd's expected time is UTC.
-cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
+cd ios/tests/protocol && swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest && TZ=UTC /tmp/mitest | python3 check_vectors.py
 
 # activity files: Swift against the fixtures and the Python reference, then the reference alone
 cd ios/tests/activity/swift && swiftc ../../../Freeband/Band/ActivityFiles.swift main.swift -o /tmp/act && /tmp/act
@@ -65,6 +82,7 @@ The simulator has no Bluetooth, so anything that talks to a band is tried on the
 Where the facts come from, so they need not be looked up again:
 
 - `vendor/` (ignored; clone again if missing): `Gadgetbridge` (codeberg.org/Freeyourgadget/Gadgetbridge), `astrobox-Core` and `astrobox-Pb` (github.com/AstralSightStudios/AstroBox-NG-Module-Core and -Pb), and `mifitness/`: Mi Fitness for Android (`com.xiaomi.wearable`, fetched with `apkeep -a com.xiaomi.wearable -d apk-pure`) with its jadx output in `mifitness/out/sources`. The band-side parsers are under `com/xiaomi/fit/fitness/parser/` and `.../device/mi/`; class names are obfuscated elsewhere, so search for strings and enum names.
+- Watch-face protocol, file-format assumptions, and future-device research: `docs/WATCH-FACES.md`.
 - Notes with citations: `docs/MIFITNESS-2026-11-13.md` (what the vendor app sends, parses and computes), `docs/SOURCES-2026-11-13.md` (today's Gadgetbridge and AstroBox), `docs/BIND.md`, `docs/SLEEP-WRITEBACK.md`, and the measured sections of `docs/ACTIVITY.md` and `docs/CAPABILITIES.md`.
 - `out/` (ignored): logs, calibration reports and database copies from the maintainer's band. Health data; never committed.
 

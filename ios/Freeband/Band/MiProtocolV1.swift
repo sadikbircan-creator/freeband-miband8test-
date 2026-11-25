@@ -40,6 +40,12 @@ struct MiV1Channel {
         case message(Data)
         /// The watch accepted (true) or refused (false) the message in flight.
         case acknowledged(Bool)
+        /// A tagged message is waiting behind another message in this characteristic's FIFO queue.
+        case taggedMessageQueued(UInt64)
+        /// A tagged message has left the FIFO queue; its initial V1 write is now being handed to the transport.
+        case taggedMessageStarted(UInt64)
+        /// Transport ACK for a tagged message, preserving its caller-assigned token.
+        case taggedAcknowledged(UInt64, Bool)
         /// An encrypted incoming message that could not be decrypted (its byte count): the tag did
         /// not match, or it came before the session keys.
         case undecryptable(Int)
@@ -70,11 +76,16 @@ struct MiV1Channel {
     var incrementNonce = true
 
     private enum InFlight {
-        case single
-        case chunked(body: [UInt8], sliceSize: Int)
+        case single(acknowledgementToken: UInt64?)
+        case chunked(body: [UInt8], sliceSize: Int, acknowledgementToken: UInt64?)
     }
 
-    private var queue: [Data] = []
+    private struct QueuedMessage {
+        let data: Data
+        let acknowledgementToken: UInt64?
+    }
+
+    private var queue: [QueuedMessage] = []
     private var inFlight: InFlight?
 
     /// Slices expected for the chunked message being received; 0 when none is.
@@ -104,9 +115,14 @@ struct MiV1Channel {
     }
 
     /// Queues one message. It is written at once unless another is in flight.
-    mutating func send(_ message: Data) -> Output {
-        queue.append(message)
-        return sendNext()
+    mutating func send(_ message: Data, acknowledgementToken: UInt64? = nil) -> Output {
+        queue.append(QueuedMessage(data: message, acknowledgementToken: acknowledgementToken))
+        var out = Output()
+        if inFlight != nil, let acknowledgementToken {
+            out.events.append(.taggedMessageQueued(acknowledgementToken))
+        }
+        out.append(sendNext())
+        return out
     }
 
     /// Handles one notification from this characteristic.
@@ -145,12 +161,16 @@ struct MiV1Channel {
             deliver(Data(b[4...]), encrypted: b[3] == 1, &out)
         default:
             // Acknowledgement of our single-write message.
-            guard case .single? = inFlight else {
+            guard case .single(let token)? = inFlight else {
                 out.events.append(.unexpected("acknowledgement \(Self.hex(b)) with no single message in flight"))
                 return out
             }
             inFlight = nil
-            out.events.append(.acknowledged(b[3] == 0))
+            if let token {
+                out.events.append(.taggedAcknowledged(token, b[3] == 0))
+            } else {
+                out.events.append(.acknowledged(b[3] == 0))
+            }
             out.append(sendNext())
         }
         return out
@@ -173,32 +193,45 @@ struct MiV1Channel {
     private mutating func sendNext() -> Output {
         var out = Output()
         guard inFlight == nil, !queue.isEmpty else { return out }
-        let message = queue.removeFirst()
-        var body = message
+        let queued = queue.removeFirst()
+        var body = queued.data
         var ctr: UInt16?
         if encrypts, let cipher {
-            ctr = incrementNonce ? counter : 0
-            body = cipher.encrypt(message, counter: ctr!)
+            let nonceCounter = incrementNonce ? counter : 0
+            ctr = nonceCounter
+            body = cipher.encrypt(queued.data, counter: nonceCounter)
             if incrementNonce { counter &+= 1 }
         }
         if body.count + 6 <= writeSize {
             var write = Data([0, 0, 2, ctr == nil ? 2 : 1])
             if let ctr { write.append(Self.u16(Int(ctr))) }
             write.append(body)
-            inFlight = .single
+            inFlight = .single(acknowledgementToken: queued.acknowledgementToken)
             out.writes.append(write)
+            if let token = queued.acknowledgementToken {
+                out.events.append(.taggedMessageStarted(token))
+            }
         } else {
-            let whole = ((ctr != nil && incrementNonce) ? [UInt8](Self.u16(Int(ctr!))) : []) + [UInt8](body)
+            let counterPrefix: [UInt8]
+            if incrementNonce, let ctr {
+                counterPrefix = [UInt8](Self.u16(Int(ctr)))
+            } else {
+                counterPrefix = []
+            }
+            let whole = counterPrefix + [UInt8](body)
             let sliceSize = writeSize - 2
             let count = (whole.count + sliceSize - 1) / sliceSize
-            inFlight = .chunked(body: whole, sliceSize: sliceSize)
+            inFlight = .chunked(body: whole, sliceSize: sliceSize, acknowledgementToken: queued.acknowledgementToken)
             out.writes.append(Data([0, 0, 0, ctr == nil ? 0 : 1]) + Self.u16(count))
+            if let token = queued.acknowledgementToken {
+                out.events.append(.taggedMessageStarted(token))
+            }
         }
         return out
     }
 
     private mutating func chunkAcknowledgement(_ subtype: UInt8, _ rest: [UInt8], _ out: inout Output) {
-        guard case .chunked(let body, let sliceSize)? = inFlight else {
+        guard case .chunked(let body, let sliceSize, let token)? = inFlight else {
             out.events.append(.unexpected("chunk acknowledgement \(subtype) with no chunked message in flight"))
             return
         }
@@ -213,7 +246,11 @@ struct MiV1Channel {
             for index in stride(from: 1, through: count, by: 1) { out.writes.append(slice(index)) }
         case 0, 2:
             inFlight = nil
-            out.events.append(.acknowledged(subtype == 0))
+            if let token {
+                out.events.append(.taggedAcknowledged(token, subtype == 0))
+            } else {
+                out.events.append(.acknowledged(subtype == 0))
+            }
             out.append(sendNext())
         case 5:
             let wanted = stride(from: 0, to: rest.count - 1, by: 2).map { Int(rest[$0]) | Int(rest[$0 + 1]) << 8 }

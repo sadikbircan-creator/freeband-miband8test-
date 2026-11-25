@@ -2,7 +2,7 @@
 
 Telefon uygulamasının Gadgetbridge'in uyguladığı protokol (BLE V2 üzerinde şifreli protobuf `Command{type, subtype, ...}`) üzerinden bantla yapabileceği her şeyin haritası. Her yetenek için: ne yaptığı, yönü, mesajın alan numaralarıyla tam yolu, Band 10 / 10 Pro'nun bunu beyan edip etmediği, Freeband için iOS'ta yapılabilirliği, efor ve risk.
 
-Tarih: 2026-10-14. Kaynak: Gadgetbridge `d4bd8367` (`vendor/Gadgetbridge`), AstroBox-NG `vendor/astrobox-Core` ve `vendor/astrobox-Pb`, Freeband `ios/`. Arka plan: `findings.md`, aktivite dosyaları için `docs/ACTIVITY.md`.
+Protokol araştırmasının başlangıç tarihi: 2026-10-14. Band 8 fiziksel doğrulaması son güncelleme: 2026-11-23. Kaynak: Gadgetbridge `d4bd8367` (`vendor/Gadgetbridge`), AstroBox-NG `vendor/astrobox-Core` ve `vendor/astrobox-Pb`, Freeband `ios/`. Arka plan: `findings.md`, aktivite dosyaları için `docs/ACTIVITY.md`.
 
 ## 0. Kısaltmalar, işaretler, ölçekler
 
@@ -635,9 +635,11 @@ Hepsi telefon → bant, kısa oturumla yapılır. AstroBox `System` id listesi `
 
 ## 13. Dosya yükleme: kadran, hızlı uygulama, ikon, firmware
 
-### 13.1 Yükleme protokolü (DataUpload / Mass, type 22)
+### 13.1 Genel yükleme protokolü (DataUpload / Mass, type 22)
 
-Kadran, RPK, bildirim ikonu ve firmware aynı yolu kullanır. Önce türe özgü "hazırlık" komutu (13.2–13.5), sonra:
+Bu bölüm Gadgetbridge/AstroBox kaynaklarında görülen genel DataUpload/Mass akışını, özellikle BLE V2 ve SPP V2 taşımasını açıklar. Bu akış Band 8 kadran uygulamamızın veri taşıma yöntemi değildir. Band 8 kadran profili için `Command{22,0}` hazırlık/negotiation mesajı ortak protobuf ailesinden kullanılsa da dosya parçaları BLE V1 `FE95/0055` karakteristiğinden, V1 onaylarıyla gönderilir; aşağıdaki V2 kanal-2 çerçeveleme ve pencere davranışını ona uygulamayın.
+
+Genel akışta kadran, RPK, bildirim ikonu ve firmware aynı Mass yolunu kullanır. Önce türe özgü "hazırlık" komutu (13.2–13.5), sonra:
 
 1. **Hazırlık:** telefon → `Command{22,0}` → `Command.dataUpload(24).dataUploadRequest(1).{type 1, md5sum 2 (16 bayt, tüm dosyanın MD5'i), size 3 (tüm dosya boyu)}` [KOD] `P/xiaomi/wear_mass.proto:6-17`, `X/services/XiaomiDataUploadService.java:106-130`. AstroBox adları: `mass(24).prepare_request(1){data_type 1, data_id 2, data_length 3, support_compress_mode 4}` [AB] `ABP/wear_mass.proto:22-27`, `ABC/device/xiaomi/components/mass.rs:331-352`.
 2. **Cevap:** `dataUpload(24).dataUploadAck(2).{md5sum 1, errno 2 (0 hazır), resumePosition 4, chunkSize 5}` [KOD] `P/xiaomi/wear_mass.proto:19-24`. AstroBox: `prepare_response(2){data_id 1, prepare_status 2, select_compress_mode 3, remained_data_length 4, expected_slice_length 5}`; durum kodları 0 hazır, 1 meşgul, 2 zaten var, 3 yer yok, 4 pil düşük, 5 sürüm düşürme, 6 desteklenmiyor, 7 sayı sınırı, 8 ağ hatası, 255 hata [AB] `ABP/wear_mass.proto:29-35`, `ABP/wear_common.proto:17-28`. `chunkSize` yoksa Gadgetbridge 2048 alıyor [KOD] `X/services/XiaomiDataUploadService.java:83-87`; AstroBox 0'da iptal ediyor [AB] `mass.rs:507-509`.
@@ -677,6 +679,7 @@ Tür kodları [KOD] `X/services/XiaomiDataUploadService.java:47-50`, [AB] `ABC/d
 
 ### 13.2 Kadranlar
 
+- **Freeband Band 8 profili [MEASURED]:** Fiziksel test, Xiaomi Smart Band 8 donanım modeli `M2239B1`, firmware `2.3.14`, tarih `2026-11-23` üzerinde yapıldı. Kurulum `Command{4,4}` ve `Command{22,0}` ile hazırlanır; dosya parçaları BLE V1 `FE95/0055` üzerinden gönderilir ve her parça V1 onayı bekler. Sıfırdan farklı `resumePosition` reddedilir; otomatik tekrar/yeniden başlatma yapılmaz. Bu, fiziksel olarak doğrulanmış tek Band 8 donanım/firmware birleşimidir; diğer Band 8 revizyonları ve diğer cihaz ailelerinde kadran işlemleri test edilmemiştir. Freeband UI yalnız Band 8 profili çözüldüğünde bu işlemleri açar. Bölüm 13.1'deki V2/SPP Mass kanal-2 çerçevelemesi bu Band 8 yolunda kullanılmaz.
 - **Ne yapar:** Yüklü kadranları listeler, aktif kadranı değiştirir, siler, yeni kadran yükler. AstroBox ayrıca fotoğraflı kadran düzenleme yapıyor.
 - **Yön:** telefon → bant.
 - **Mesajlar:** [KOD] `P/xiaomi/wear_watch_face.proto:6-43`, `X/services/XiaomiWatchfaceService.java:44-49`, `:72-262`; [AB] `ABP/wear_watch_face.proto:9-38`
@@ -685,11 +688,12 @@ Tür kodları [KOD] `X/services/XiaomiDataUploadService.java:47-50`, [AB] `ABC/d
   - Sil `Command{4,2}` → `watchfaceId(2)`. Gadgetbridge yerleşik (`canDelete = false`) ve aktif kadranı silmeyi reddediyor (`:168-199`).
   - Yükle: `Command{4,4}` → `watchface(6).watchfaceInstallStart(6).{id 1, size 2}` (AstroBox `prepare_info(6){id 1, size 2, version_code 3 = 65536}`) → bant `installStatus(5)` / `prepare_status(5)` 0 → yükleme türü 16 → bant `Command{4,5}` `install_result(7){id, code: 0 doğrulama hatası, 1 kurulum hatası, 2 başarı, 3 zaten kullanımda}` [AB] `ABP/wear_watch_face.proto:15`, `:136-149`, `ABC/device/xiaomi/components/install.rs:469-487`, `:219-237`. Gadgetbridge sonucu beklemiyor, yükleme bitince aktif yapıp listeyi istiyor (`X/services/XiaomiWatchfaceService.java:241-263`).
   - Yalnız AstroBox'ta: desteklenen komplikasyonlar `Command{4,10}`, düzenleme `Command{4,11}` `edit_request(12)` → `edit_response(13){..., expected_slice_length}`, sonra resim (tür 48) ya da yazı tipi (tür 53) yüklemesi, sonuç `4,12` / `4,13` [AB] `ABP/wear_watch_face.proto:187-239`, `ABC/device/watchface.rs:419-525`.
-- **Dosya biçimi:** `.bin`, `5A A5` ile başlar; Gadgetbridge id'yi `0x28`'den, adı `0x68`'den okuyor [KOD] `XD/XiaomiFWHelper.java:388-440`; AstroBox sihirli baytı `5a a5 34 12` olarak, id'yi ofset 34'ten başlayan 24 baytta 9 ya da 12 haneli ilk dizi olarak arıyor ve `.mwz` zip paketlerini de açıyor [AB] `ABC/device/xiaomi/resutils.rs:9`, `:75-167`, `:1191-1194`. Gadgetbridge'in "v3" kadran biçimi (`00 00 06 07 00 02 00 01`) id çıkarmıyor, yani yükleme komutu boş id ile giderdi [KOD] `XD/XiaomiFWHelper.java:55`, `:442-461`.
-- **Beyan:** statik (`supportsWatchfaceManagement`) [KOD] `XD/XiaomiCoordinator.java:275-292`. Band 10 / 10 Pro için önizleme boyutu tanımlı değil; ekran 212 × 520 / 336 × 480.
+- **Freeband BIN kabul sınırı [FB]** `FB/Band/MiWatchFaceUpload.swift`: yalnız `.bin` seçilir; dosya en az `0xA8` bayt ve en fazla 16 MiB olmalı; ilk dört bayt tam `5A A5 34 12` olmalı; `faceCount` sıfırdan büyük olmalı; ID, `0x28..<0x68` alanında NUL ile sonlanmalı ve yalnız ondalık rakamlardan oluşmalı. ID 12 haneye kadar test vektörüyle kapsanır. Bir stil (AOD'siz) dosya yapısal olarak kabul edilir; Band 8 profiline göre iki stil beklentisinden sapma yalnız uyarıdır. İsim `0x68..<0xA4` alanından okunur. **Bu parser sınırı diğer Xiaomi aileleri için uyumluluk garantisi değildir.** Gadgetbridge ID'yi `0x28`'den ve adı `0x68`'den okur [KOD] `XD/XiaomiFWHelper.java:388-440`; AstroBox sihirli baytı `5a a5 34 12` olarak, ID'yi ofset 34'ten başlayan 24 baytta 9 ya da 12 haneli ilk dizi olarak arar ve `.mwz` zip paketlerini de açar [AB] `ABC/device/xiaomi/resutils.rs:9`, `:75-167`, `:1191-1194`. Gadgetbridge'in "v3" kadran biçimi (`00 00 06 07 00 02 00 01`) ID çıkarmıyor [KOD] `XD/XiaomiFWHelper.java:55`, `:442-461`.
+- **Gadgetbridge beyanı ile Freeband desteğini ayırın:** Gadgetbridge'in ortak Band 10/10 Pro coordinator sınıfında `supportsWatchfaceManagement` statik olarak `true` beyan edilir [KOD] `XD/XiaomiCoordinator.java:275-292`. Bu, Freeband'in Band 10/10 Pro'yu desteklediği veya bu cihazlarda fiziksel test yapıldığı anlamına gelmez. Freeband'in `WatchFaceProfiles` kaydı yalnız Band 8 profilini içerir; diğer ailelerde kadran işlemleri UI'da açılmaz. Band 10 / 10 Pro ekran ölçüleri 212 × 520 / 336 × 480 olsa da bu ölçüler Freeband uyumluluk profili değildir.
 - **iOS:**
   - **Liste + aktif kadranı değiştirme + silme:** kısa oturum, dosya aktarımı yok. Hızlı kazanım.
-  - **Yükleme:** 13.1 altyapısı, kullanıcı `.bin`/`.mwz` dosyasını Dosyalar'dan seçer (`UIDocumentPickerViewController`). Kadran kaynağı ve telif kullanıcıya ait. Yanlış model için yapılmış kadranı bantın reddetmesi beklenir (`code 0`) [TAHMİN].
+  - **Yükleme:** Kullanıcı yalnız `.bin` dosyasını Dosyalar'dan seçer (`UIDocumentPickerViewController`). Band 8 profili `Command{4,4}` / `Command{22,0}` hazırlığını ve BLE V1 `FE95/0055` veri aktarımını kullanır; bu, 13.1'de anlatılan genel BLE V2/SPP V2 kanal-2 aktarım altyapısı değildir. `.mwz` paketini açma/işleme Freeband'de uygulanmadı. Kadran kaynağı ve telif kullanıcıya ait.
+  - **[MEASURED] Çapraz model testi:** Band 8 (M2239B1, firmware 2.3.14) üzerinde kullanıcı tarafından Band 10 kaynaklı olduğu belirtilen iki BIN denendi. İkisinde de veri parçaları onaylandı ve cihaz başarılı kurulum sonucu döndürdü; NewModLand otomatik etkinleştirildi, 2,58 MB dosyanın etkinleştirilmesi zaman aşımına uğradı. Band 8 ekranında görülen yerleşim, bazı veri alanları ve AOD doğru değildi. Ayrıntılar [WATCH-FACES.md, Cases B–C](WATCH-FACES.md#comparative-physical-device-file-tests--xiaomi-smart-band-8). Bu nedenle bantın başka model için hazırlanmış her dosyayı `code 0` ile reddedeceği varsayılmamalı; ön analiz ve fiziksel doğrulama gerekir.
 - **Efor / risk:** liste/değiştir/sil S / düşük; yükleme M (13.1'in üstüne) / orta.
 
 ### 13.3 Hızlı uygulamalar (RPK)
