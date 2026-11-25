@@ -17,11 +17,11 @@ struct WatchFaceManagementView: View {
     @State private var compatibilityReport: WatchFaceCompatibilityReport?
     @State private var showingInstallConfirmation = false
     @State private var activeAlert: WatchFaceAlert?
+    @State private var importError: String?
 
     private struct WatchFaceAlert {
         let title: String
         let message: String
-        let refreshAfterAcknowledgement: Bool
     }
 
     private var isBusy: Bool { link.phase.isBusy }
@@ -91,6 +91,16 @@ struct WatchFaceManagementView: View {
                         .foregroundStyle(.red)
                 } header: {
                     Text(String(localized: "Watch-face operation failed"))
+                }
+            }
+
+            if let importError {
+                Section {
+                    Text(importError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                } header: {
+                    Text(String(localized: "Couldn't open watch-face file"))
                 }
             }
 
@@ -207,21 +217,19 @@ struct WatchFaceManagementView: View {
             refresh()
         }
         .onChange(of: link.phase) { _, phase in
-            if case .failed(let message) = phase, link.purpose.isWatchFaceOperation {
-                // A failed mutation may have reached the band even when its reply was lost.
-                // Wait for the user's acknowledgement, then perform one read-only inventory refresh.
-                // A failed inventory read itself never schedules another refresh.
-                let shouldRefreshAfterAcknowledgement: Bool
-                if case .watchFaces = link.purpose {
-                    shouldRefreshAfterAcknowledgement = false
-                } else {
-                    shouldRefreshAfterAcknowledgement = true
+            if case .failed(let message) = phase {
+                // Only failed mutations that can change the installed inventory need a blocking
+                // acknowledgement followed by one read-only refresh. Inventory-read failures and
+                // all other errors remain inline and never trigger another operation.
+                switch link.purpose {
+                case .watchFaceSet, .watchFaceDelete, .watchFaceInstall:
+                    activeAlert = WatchFaceAlert(
+                        title: String(localized: "Watch-face operation failed"),
+                        message: "\(message)\n\n\(String(localized: "The failed operation will not be repeated. After you acknowledge this message, Freeband will read the installed watch-face list again."))"
+                    )
+                default:
+                    break
                 }
-                activeAlert = WatchFaceAlert(
-                    title: String(localized: "Watch-face operation failed"),
-                    message: "\(message)\n\n\(String(localized: "The failed operation will not be repeated. After you acknowledge this message, Freeband will read the installed watch-face list again."))",
-                    refreshAfterAcknowledgement: shouldRefreshAfterAcknowledgement
-                )
             }
             guard watchFaceProfile != nil, !didAutoLoad, link.watchFaces.isEmpty else { return }
             // If this screen was opened during sync, run its requested initial read only after a
@@ -240,6 +248,7 @@ struct WatchFaceManagementView: View {
             allowsMultipleSelection: false
         ) { result in
             do {
+                importError = nil
                 let urls = try result.get()
                 guard let url = urls.first else { return }
                 let accessed = url.startAccessingSecurityScopedResource()
@@ -251,11 +260,7 @@ struct WatchFaceManagementView: View {
             } catch {
                 importedFace = nil
                 compatibilityReport = nil
-                activeAlert = WatchFaceAlert(
-                    title: String(localized: "Couldn't open watch-face file"),
-                    message: error.localizedDescription,
-                    refreshAfterAcknowledgement: false
-                )
+                importError = error.localizedDescription
             }
         }
         .confirmationDialog(
@@ -276,9 +281,8 @@ struct WatchFaceManagementView: View {
             set: { if !$0 { activeAlert = nil } }
         )) {
             Button(String(localized: "OK"), role: .cancel) {
-                let shouldRefresh = activeAlert?.refreshAfterAcknowledgement ?? false
                 activeAlert = nil
-                if shouldRefresh { refresh() }
+                refresh()
             }
         } message: {
             Text(activeAlert?.message ?? "")
