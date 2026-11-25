@@ -26,6 +26,24 @@ Instructions for coding agents (and people) changing this repository. The README
 8. **Record the result** in the docs as `[MEASURED]`, with the device, firmware and date.
 9. **Bump `ActivityIngest.parserVersion`** (with a comment line saying why) when a change alters what a stored file yields; stored files are parsed again at the next launch.
 
+
+## Mi Band 8 watch-face feature
+
+The watch-face feature is a deliberately isolated Band 8 profile, not a generic Xiaomi watch-face implementation. Keep protocol assumptions, source citations, physical test evidence, and known limitations in `docs/WATCH-FACES.md`; update that document whenever a code or behavior decision changes.
+
+- Keep profile selection explicit. Unsupported device families must not fall back to Band 8 commands, file parsing, or the FE95/0055 upload path.
+- Keep protocol framing and file parsing platform-independent. BLE session ownership, queueing, timers, and CoreBluetooth callbacks belong in `BandLink.swift`; UI behavior belongs in `WatchFaceManagementView.swift`.
+- A same-ID face is never removed or replaced automatically. Recheck the installed inventory immediately before upload; the user must delete a duplicate manually.
+- Never automatically retry, resume, restart, or continue a failed watch-face mutation or upload. A new mutation attempt requires a direct user action.
+- Only failed state-changing watch-face operations (install, delete, activate/set) use the blocking failure alert. After the user acknowledges it, perform exactly one read-only inventory refresh. Read-only list failures and local file selection/parsing/preview/compatibility errors stay inline and must not trigger another BLE operation.
+- Activation has one separate protocol-level exception: if the activation reply is missing, do not resend activation; perform a read-only inventory reconciliation to check whether the requested face became active. Record this separately from the post-alert refresh policy in `docs/WATCH-FACES.md`.
+- V1 command timing is staged: queue-wait watchdog, transport-ACK watchdog, then command-response timeout. `taggedMessageStarted` means the message left the per-characteristic FIFO and was handed to the BLE writer; it does not prove over-the-air delivery. Do not turn this feature-specific tracking into a global BLE queue or change unrelated sync scheduling without a separate design decision.
+- Preserve the distinction between transfer acceptance, install-result success, activation confirmation, inventory state, and visual compatibility. A successful transfer/install response is not proof that a foreign-family face renders correctly.
+- When recording diagnostics, include only sanitized event summaries and the relevant non-secret status/count/timeout lines. Never commit raw authentication request/response payloads, keys, MAC addresses, serials, CoreBluetooth identifiers, or personal notification content. Mark hypotheses (for example, delayed ACKs after reconnect) as unconfirmed.
+- Record physical results with exact model, firmware and date. Use `[MEASURED]` only when diagnostic evidence supports the physical result; use `[TESTED]` for user-observed results without retained logs; use `[DIAGNOSTIC]` for offline/log evidence that is not itself a physical-device measurement. Keep untested behavior explicitly marked.
+
+The focused protocol-vector command below includes watch-face parsing, preview and compatibility tests. The unsigned IPA workflow is fork-local during this feature's physical validation; do not remove it from the feature branch until the user explicitly says validation is complete.
+
 ## Tests
 
 ```sh
