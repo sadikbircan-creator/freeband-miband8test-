@@ -26,7 +26,6 @@ Instructions for coding agents (and people) changing this repository. The README
 8. **Record the result** in the docs as `[MEASURED]`, with the device, firmware and date.
 9. **Bump `ActivityIngest.parserVersion`** (with a comment line saying why) when a change alters what a stored file yields; stored files are parsed again at the next launch.
 
-
 ## Mi Band 8 watch-face feature
 
 The watch-face feature is a deliberately isolated Band 8 profile, not a generic Xiaomi watch-face implementation. Keep protocol assumptions, source citations, physical test evidence, and known limitations in `docs/WATCH-FACES.md`; update that document whenever a code or behavior decision changes.
@@ -42,7 +41,7 @@ The watch-face feature is a deliberately isolated Band 8 profile, not a generic 
 - When recording diagnostics, include only sanitized event summaries and the relevant non-secret status/count/timeout lines. Never commit raw authentication request/response payloads, keys, MAC addresses, serials, CoreBluetooth identifiers, or personal notification content. Mark hypotheses (for example, delayed ACKs after reconnect) as unconfirmed.
 - Record physical results with exact model, firmware and date. Use `[MEASURED]` only when diagnostic evidence supports the physical result; use `[TESTED]` for user-observed results without retained logs; use `[DIAGNOSTIC]` for offline/log evidence that is not itself a physical-device measurement. Keep untested behavior explicitly marked.
 
-The focused protocol-vector command below includes watch-face parsing, preview and compatibility tests. The unsigned IPA workflow is fork-local and must not be included in pull requests to the upstream repository.
+The focused protocol-vector command below includes watch-face parsing, preview and compatibility tests. 
 
 ## Tests
 
