@@ -104,10 +104,6 @@ struct MiV1Channel {
     var receiveProgress: (received: Int, total: Int)? {
         expectedSlices > 0 ? (slices.count, expectedSlices) : nil
     }
-    /// Incoming V1 message progress, exposed for sanitized diagnostics only.
-    var receiveProgress: (received: Int, total: Int)? {
-        expectedSlices > 0 ? (slices.count, expectedSlices) : nil
-    }
 
     private var writeSize: Int { max(maxWrite, 20) }
 
