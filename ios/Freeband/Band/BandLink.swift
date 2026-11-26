@@ -1483,7 +1483,7 @@ final class BandLink: NSObject, ObservableObject {
         onV1TransportAcknowledged: ((Bool) -> Void)? = nil
     ) {
         if transport == .v1 {
-            // Watch-face commands and activity-file requests with an ACK callbacks are tagged so
+            // Watch-face commands and activity-file requests with an ACK callback are tagged so
             // their transport acknowledgements can be correlated with the exact queued message.
             // Watch-face operations additionally use the queue and ACK watchdogs below.
             if purpose.isWatchFaceOperation || onV1TransportAcknowledged != nil {
