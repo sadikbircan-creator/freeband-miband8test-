@@ -311,9 +311,9 @@ final class BandLink: NSObject, ObservableObject {
     /// Tagged V1 command messages: transport ACK handlers and in-flight watchdogs.
     private var nextV1CommandAcknowledgementToken: UInt64 = 0
     private var v1CommandAcknowledgementHandlers: [UInt64: (Bool) -> Void] = [:]
-    /// Tagged watch-face commands waiting behind the current V1 0052 message.
+    /// Tagged commands waiting behind the current V1 0052 message.
     private var v1CommandQueuedTokens: Set<UInt64> = []
-    /// Tagged watch-face commands dispatched by MiV1Channel and waiting for their V1 ACK.
+    /// Tagged commands dispatched by MiV1Channel and waiting for their V1 ACK.
     private var v1CommandPendingAcknowledgements: Set<UInt64> = []
     /// V1: the latest missing-slice timer per characteristic; `sliceTimerSerial` never resets, so a
     /// timer from before a reconnect never matches.
