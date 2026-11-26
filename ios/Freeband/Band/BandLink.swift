@@ -1202,7 +1202,11 @@ final class BandLink: NSObject, ObservableObject {
         activityRequestAwaitingWrite = true
         activityRequestAwaitingTransportAck = false
         note("→ activity file request queued for 0052: \(file.hex)")
-        sendCommand(MiAuth.activityFetchCommand(file.data), encrypted: true)
+        sendCommand(MiAuth.activityFetchCommand(file.data), encrypted: true) { [weak self] accepted in
+            guard let self, self.active, self.fileStage == .fetching, self.currentFile == file else { return }
+            self.activityRequestAwaitingTransportAck = false
+            self.note("← 0052 activity-request transport ACK: \(accepted ? "accepted" : "refused")")
+        }
         note("file response timer started (5 s) for \(file.hex); request may still be queued")
         armFileTimer()
     }
@@ -1476,7 +1480,7 @@ final class BandLink: NSObject, ObservableObject {
             // Tag every command-channel message during watch-face operations. Its response timer
             // starts on the transport ACK; a separate watchdog covers a message once it leaves
             // the per-characteristic queue.
-            if purpose.isWatchFaceOperation {
+            if purpose.isWatchFaceOperation || onV1TransportAcknowledged != nil {
                 nextV1CommandAcknowledgementToken &+= 1
                 let token = nextV1CommandAcknowledgementToken
                 if let onV1TransportAcknowledged {
@@ -1513,12 +1517,6 @@ final class BandLink: NSObject, ObservableObject {
         guard let p = peripheral else { return }
         while !writeQueue.isEmpty, p.canSendWriteWithoutResponse {
             let next = writeQueue.removeFirst()
-            if next.characteristic.uuid == Self.v1CommandWrite, activityRequestAwaitingWrite,
-               let file = currentFile, fileStage == .fetching {
-                activityRequestAwaitingWrite = false
-                activityRequestAwaitingTransportAck = true
-                note("→ activity file request handed to CoreBluetooth on 0052 for \(file.hex), \(next.value.count) byte(s)")
-            }
             p.writeValue(next.value, for: next.characteristic, type: .withoutResponse)
         }
     }
@@ -1670,6 +1668,9 @@ final class BandLink: NSObject, ObservableObject {
         switch event {
         case .taggedMessageQueued(let token):
             v1CommandQueuedTokens.insert(token)
+            if purpose == .sync, activityRequestAwaitingWrite, let file = currentFile {
+                note("activity file request waiting in 0052 queue for \(file.hex)")
+            }
             let thisRun = run
             after(Self.v1CommandQueueTimeout, thisRun) { [weak self] in
                 guard let self, self.active, self.purpose.isWatchFaceOperation,
@@ -1678,6 +1679,11 @@ final class BandLink: NSObject, ObservableObject {
                 self.fail(.timeout)
             }
         case .taggedMessageStarted(let token):
+            if purpose == .sync, activityRequestAwaitingWrite, let file = currentFile {
+                activityRequestAwaitingWrite = false
+                activityRequestAwaitingTransportAck = true
+                note("→ activity file request handed to V1 0052 writer for \(file.hex)")
+            }
             v1CommandQueuedTokens.remove(token)
             v1CommandPendingAcknowledgements.insert(token)
             let thisRun = run
@@ -1700,10 +1706,6 @@ final class BandLink: NSObject, ObservableObject {
             default: note("← \(uuid.uuidString) \(body.count) bytes, not used")
             }
         case .acknowledged(let accepted):
-            if uuid == Self.v1CommandWrite, activityRequestAwaitingTransportAck {
-                activityRequestAwaitingTransportAck = false
-                note("← 0052 activity-request transport ACK: \(accepted ? "accepted" : "refused")")
-            }
             if uuid == Self.v1Upload, isInstallingWatchFace {
                 guard accepted else {
                     note("← watch-face upload part \(watchFaceUploadIndex + 1) refused")
