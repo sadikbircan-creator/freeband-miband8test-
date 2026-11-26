@@ -100,6 +100,14 @@ struct MiV1Channel {
     /// A chunked message is partly received: the caller asks for the missing slices
     /// (`requestMissing()`) when none arrives for 5 s.
     var isReceiving: Bool { expectedSlices > 0 }
+    /// Incoming V1 message progress, exposed for sanitized diagnostics only.
+    var receiveProgress: (received: Int, total: Int)? {
+        expectedSlices > 0 ? (slices.count, expectedSlices) : nil
+    }
+    /// Incoming V1 message progress, exposed for sanitized diagnostics only.
+    var receiveProgress: (received: Int, total: Int)? {
+        expectedSlices > 0 ? (slices.count, expectedSlices) : nil
+    }
 
     private var writeSize: Int { max(maxWrite, 20) }
 
