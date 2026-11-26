@@ -1199,13 +1199,18 @@ final class BandLink: NSObject, ObservableObject {
     private func requestCurrentFile() {
         guard let file = currentFile else { return }
         assembler = ActivityAssembler()
-        activityRequestAwaitingWrite = true
+        activityRequestAwaitingWrite = transport == .v1
         activityRequestAwaitingTransportAck = false
-        note("→ activity file request queued for 0052: \(file.hex)")
-        sendCommand(MiAuth.activityFetchCommand(file.data), encrypted: true) { [weak self] accepted in
-            guard let self, self.active, self.fileStage == .fetching, self.currentFile == file else { return }
-            self.activityRequestAwaitingTransportAck = false
-            self.note("← 0052 activity-request transport ACK: \(accepted ? "accepted" : "refused")")
+        let requestChannel = transport == .v1 ? "0052" : "V2 TX"
+        note("→ activity file request queued for \(requestChannel): \(file.hex)")
+        if transport == .v1 {
+            sendCommand(MiAuth.activityFetchCommand(file.data), encrypted: true) { [weak self] accepted in
+                guard let self, self.active, self.fileStage == .fetching, self.currentFile == file else { return }
+                self.activityRequestAwaitingTransportAck = false
+                self.note("← 0052 activity-request transport ACK: \(accepted ? "accepted" : "refused")")
+            }
+        } else {
+            sendCommand(MiAuth.activityFetchCommand(file.data), encrypted: true)
         }
         note("file response timer started (5 s) for \(file.hex); request may still be queued")
         armFileTimer()
@@ -1220,7 +1225,8 @@ final class BandLink: NSObject, ObservableObject {
             guard let self, self.fileToken == token, self.fileStage == .fetching, let file = self.currentFile else { return }
             let appProgress = self.assembler.progress.map { "\($0.received)/\($0.total) app chunk(s)" } ?? "no app chunks"
             let v1Progress = self.v1Channels[Self.v1Activity]?.receiveProgress.map { "\($0.received)/\($0.total) V1 slice(s)" } ?? "no V1 message in progress"
-            self.note("file \(file.hex) timer expired: \(appProgress), \(v1Progress)")
+            let requestState = self.activityRequestAwaitingWrite ? "request still queued" : self.activityRequestAwaitingTransportAck ? "waiting for 0052 transport ACK" : "transport stage complete or not tracked"
+            self.note("file \(file.hex) timer expired: \(requestState), \(appProgress), \(v1Progress)")
             if !self.currentRetried {
                 self.currentRetried = true
                 self.note("file \(file.hex) did not answer, retrying")
