@@ -1248,10 +1248,10 @@ final class BandLink: NSObject, ObservableObject {
         guard fileStage == .fetching, let file = currentFile else { return }
         switch assembler.add(packet) {
         case .needMore:
-            if let progress = assembler.progress {
-                note("← activity file chunk \(progress.received)/\(progress.total), \(packet.count) bytes")
+            if let progress = assembler.progress,
+               progress.received == 1 || progress.received % 10 == 0 {
+                note("← activity file chunk \(progress.received)/\(progress.total), \(packet.count) bytes; response timer reset")
             }
-            note("file response timer reset (5 s) after activity chunk")
             armFileTimer()
         case .complete(let data):
             fileToken += 1
@@ -1758,10 +1758,6 @@ final class BandLink: NSObject, ObservableObject {
         sliceTimerSerial += 1
         let serial = sliceTimerSerial
         sliceTimers[uuid] = serial
-        if uuid == Self.v1Activity, fileStage == .fetching,
-           let progress = v1Channels[uuid]?.receiveProgress {
-            note("0053 V1 slice timer started (5 s), \(progress.received)/\(progress.total) received")
-        }
         after(5, run) { [weak self] in
             guard let self, self.active, self.sliceTimers[uuid] == serial else { return }
             if uuid == Self.v1Activity, self.fileStage == .fetching,
@@ -1991,7 +1987,9 @@ extension BandLink: CBPeripheralDelegate {
             if isActivityFetch, chunkIndex > 0 {
                 let progress = v1Channels[Self.v1Activity]?.receiveProgress
                 if let progress {
-                    note("← 0053 V1 slice \(chunkIndex), progress \(progress.received)/\(progress.total)")
+                    if progress.received == 1 || progress.received % 10 == 0 {
+                        note("← 0053 V1 slice \(chunkIndex), progress \(progress.received)/\(progress.total)")
+                    }
                 } else {
                     note("← 0053 V1 slice \(chunkIndex), incoming message complete")
                 }
