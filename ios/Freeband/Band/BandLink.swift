@@ -308,7 +308,7 @@ final class BandLink: NSObject, ObservableObject {
     /// V1: the three characteristics, and one MiV1Channel each, by UUID.
     private var v1Characteristics: [CBUUID: CBCharacteristic] = [:]
     private var v1Channels: [CBUUID: MiV1Channel] = [:]
-    /// V1 command messages for watch-face operations: transport ACK handlers and in-flight watchdogs.
+    /// Tagged V1 command messages: transport ACK handlers and in-flight watchdogs.
     private var nextV1CommandAcknowledgementToken: UInt64 = 0
     private var v1CommandAcknowledgementHandlers: [UInt64: (Bool) -> Void] = [:]
     /// Tagged watch-face commands waiting behind the current V1 0052 message.
@@ -1483,9 +1483,9 @@ final class BandLink: NSObject, ObservableObject {
         onV1TransportAcknowledged: ((Bool) -> Void)? = nil
     ) {
         if transport == .v1 {
-            // Tag every command-channel message during watch-face operations. Its response timer
-            // starts on the transport ACK; a separate watchdog covers a message once it leaves
-            // the per-characteristic queue.
+            // Watch-face commands and activity-file requests with an ACK callbacks are tagged so
+            // their transport acknowledgements can be correlated with the exact queued message.
+            // Watch-face operations additionally use the queue and ACK watchdogs below.
             if purpose.isWatchFaceOperation || onV1TransportAcknowledged != nil {
                 nextV1CommandAcknowledgementToken &+= 1
                 let token = nextV1CommandAcknowledgementToken
