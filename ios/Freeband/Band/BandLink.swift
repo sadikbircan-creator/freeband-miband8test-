@@ -319,6 +319,9 @@ final class BandLink: NSObject, ObservableObject {
     /// timer from before a reconnect never matches.
     private var sliceTimers: [CBUUID: Int] = [:]
     private var sliceTimerSerial = 0
+    /// Diagnostic correlation for the current activity-file request; does not affect queueing.
+    private var activityRequestAwaitingWrite = false
+    private var activityRequestAwaitingTransportAck = false
     /// Data frames by sequence number, kept so a NACK can resend them; the UInt8 key bounds it to 256.
     private var sentFrames: [UInt8: Data] = [:]
     private var phoneNonce = Data()
@@ -1196,7 +1199,11 @@ final class BandLink: NSObject, ObservableObject {
     private func requestCurrentFile() {
         guard let file = currentFile else { return }
         assembler = ActivityAssembler()
+        activityRequestAwaitingWrite = true
+        activityRequestAwaitingTransportAck = false
+        note("→ activity file request queued for 0052: \(file.hex)")
         sendCommand(MiAuth.activityFetchCommand(file.data), encrypted: true)
+        note("file response timer started (5 s) for \(file.hex); request may still be queued")
         armFileTimer()
     }
 
@@ -1207,6 +1214,9 @@ final class BandLink: NSObject, ObservableObject {
         let token = fileToken
         after(5, run) { [weak self] in
             guard let self, self.fileToken == token, self.fileStage == .fetching, let file = self.currentFile else { return }
+            let appProgress = self.assembler.progress.map { "\($0.received)/\($0.total) app chunk(s)" } ?? "no app chunks"
+            let v1Progress = self.v1Channels[Self.v1Activity]?.receiveProgress.map { "\($0.received)/\($0.total) V1 slice(s)" } ?? "no V1 message in progress"
+            self.note("file \(file.hex) timer expired: \(appProgress), \(v1Progress)")
             if !self.currentRetried {
                 self.currentRetried = true
                 self.note("file \(file.hex) did not answer, retrying")
@@ -1228,9 +1238,14 @@ final class BandLink: NSObject, ObservableObject {
         guard fileStage == .fetching, let file = currentFile else { return }
         switch assembler.add(packet) {
         case .needMore:
+            if let progress = assembler.progress {
+                note("← activity file chunk \(progress.received)/\(progress.total), \(packet.count) bytes")
+            }
+            note("file response timer reset (5 s) after activity chunk")
             armFileTimer()
         case .complete(let data):
             fileToken += 1
+            note("activity file assembly complete, \(data.count) bytes; CRC validation passed")
             // A file opens with its own id. The Redmi Watch 5 Active answers earlier requests late,
             // so file the data under that id (as Gadgetbridge does), not under the one awaited;
             // that one is still owed, so its timer restarts.
@@ -1414,6 +1429,8 @@ final class BandLink: NSObject, ObservableObject {
         v1Characteristics = [:]
         v1Channels = [:]
         sliceTimers = [:]
+        activityRequestAwaitingWrite = false
+        activityRequestAwaitingTransportAck = false
         v1CommandAcknowledgementHandlers.removeAll()
         v1CommandQueuedTokens.removeAll()
         v1CommandPendingAcknowledgements.removeAll()
@@ -1496,6 +1513,12 @@ final class BandLink: NSObject, ObservableObject {
         guard let p = peripheral else { return }
         while !writeQueue.isEmpty, p.canSendWriteWithoutResponse {
             let next = writeQueue.removeFirst()
+            if next.characteristic.uuid == Self.v1CommandWrite, activityRequestAwaitingWrite,
+               let file = currentFile, fileStage == .fetching {
+                activityRequestAwaitingWrite = false
+                activityRequestAwaitingTransportAck = true
+                note("→ activity file request handed to CoreBluetooth on 0052 for \(file.hex), \(next.value.count) byte(s)")
+            }
             p.writeValue(next.value, for: next.characteristic, type: .withoutResponse)
         }
     }
@@ -1670,11 +1693,17 @@ final class BandLink: NSObject, ObservableObject {
             handler?(accepted)
         case .message(let body):
             switch uuid {
-            case Self.v1Activity: receiveActivityChunk(body)
+            case Self.v1Activity:
+                if fileStage == .fetching { note("← 0053 V1 message reassembled, \(body.count) bytes") }
+                receiveActivityChunk(body)
             case Self.v1CommandRead, Self.v1CommandWrite: handleCommandBytes(body)
             default: note("← \(uuid.uuidString) \(body.count) bytes, not used")
             }
         case .acknowledged(let accepted):
+            if uuid == Self.v1CommandWrite, activityRequestAwaitingTransportAck {
+                activityRequestAwaitingTransportAck = false
+                note("← 0052 activity-request transport ACK: \(accepted ? "accepted" : "refused")")
+            }
             if uuid == Self.v1Upload, isInstallingWatchFace {
                 guard accepted else {
                     note("← watch-face upload part \(watchFaceUploadIndex + 1) refused")
@@ -1721,9 +1750,18 @@ final class BandLink: NSObject, ObservableObject {
         sliceTimerSerial += 1
         let serial = sliceTimerSerial
         sliceTimers[uuid] = serial
+        if uuid == Self.v1Activity, fileStage == .fetching,
+           let progress = v1Channels[uuid]?.receiveProgress {
+            note("0053 V1 slice timer started (5 s), \(progress.received)/\(progress.total) received")
+        }
         after(5, run) { [weak self] in
             guard let self, self.active, self.sliceTimers[uuid] == serial else { return }
-            self.note("← \(uuid.uuidString) slices missing, asking again")
+            if uuid == Self.v1Activity, self.fileStage == .fetching,
+               let progress = self.v1Channels[uuid]?.receiveProgress {
+                self.note("0053 V1 slice timer expired, \(progress.received)/\(progress.total) received; requesting missing slices")
+            } else {
+                self.note("← \(uuid.uuidString) slices missing, asking again")
+            }
             self.v1Step(uuid) { $0.requestMissing() }
         }
     }
@@ -1933,7 +1971,23 @@ extension BandLink: CBPeripheralDelegate {
             guard active, v1Characteristics[characteristic.uuid] != nil else { return }
             // Every value until the watch accepts the login, to debug the handshake.
             if !authed { note("← \(characteristic.uuid.uuidString) \(Self.hexPrefix(value))") }
+            let bytes = [UInt8](value)
+            let isActivityFetch = characteristic.uuid == Self.v1Activity && fileStage == .fetching
+            let chunkIndex = bytes.count >= 2 ? Int(bytes[0]) | (Int(bytes[1]) << 8) : 0
+            let startsChunkedMessage = bytes.count >= 6 && chunkIndex == 0 && bytes[2] == 0
+            if isActivityFetch, startsChunkedMessage {
+                let total = Int(bytes[4]) | (Int(bytes[5]) << 8)
+                note("← 0053 V1 incoming message started, \(total) slice(s)")
+            }
             v1Step(characteristic.uuid) { $0.receive(value) }
+            if isActivityFetch, chunkIndex > 0 {
+                let progress = v1Channels[Self.v1Activity]?.receiveProgress
+                if let progress {
+                    note("← 0053 V1 slice \(chunkIndex), progress \(progress.received)/\(progress.total)")
+                } else {
+                    note("← 0053 V1 slice \(chunkIndex), incoming message complete")
+                }
+            }
         }
     }
 
