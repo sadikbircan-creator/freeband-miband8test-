@@ -22,6 +22,9 @@ enum WatchFaceCompatibilityWarning: Equatable, Identifiable {
     case previewDecodeFailed
     case previewDimensionsDiffer(reference: String)
     case faceStyleCountDiffers(expected: String)
+    case foreignResourceEncoding(summary: String)
+    case structuralIssues(count: Int)
+    case unresolvedWidgets(count: Int)
 
     var id: String {
         switch self {
@@ -29,6 +32,9 @@ enum WatchFaceCompatibilityWarning: Equatable, Identifiable {
         case .previewDecodeFailed: return "previewDecodeFailed"
         case .previewDimensionsDiffer: return "previewDimensionsDiffer"
         case .faceStyleCountDiffers: return "faceStyleCountDiffers"
+        case .foreignResourceEncoding: return "foreignResourceEncoding"
+        case .structuralIssues: return "structuralIssues"
+        case .unresolvedWidgets: return "unresolvedWidgets"
         }
     }
 
@@ -48,6 +54,21 @@ enum WatchFaceCompatibilityWarning: Equatable, Identifiable {
                 String(localized: "This file does not contain the expected %@. Its always-on screen may be missing or different."),
                 expected
             )
+        case .foreignResourceEncoding(let summary):
+            return String.localizedStringWithFormat(
+                String(localized: "The image resources use a different encoding profile: %@. Rendering on this band may differ."),
+                summary
+            )
+        case .structuralIssues(let count):
+            return String.localizedStringWithFormat(
+                String(localized: "The BIN inspector found %lld structural issue(s). Review the detailed report before installing."),
+                Int64(count)
+            )
+        case .unresolvedWidgets(let count):
+            return String.localizedStringWithFormat(
+                String(localized: "%lld widget reference(s) could not be resolved. Some displayed data may be missing."),
+                Int64(count)
+            )
         }
     }
 }
@@ -56,6 +77,7 @@ struct WatchFaceCompatibilityReport: Equatable {
     let previewSize: WatchFacePreviewSize?
     let preview: MiWatchFacePreview?
     let warnings: [WatchFaceCompatibilityWarning]
+    let inspection: WatchFaceBINInspection?
 
     var hasWarnings: Bool { !warnings.isEmpty }
 
@@ -74,6 +96,17 @@ enum WatchFaceCompatibilityAnalyzer {
         rules: WatchFaceCompatibilityRules
     ) -> WatchFaceCompatibilityReport {
         var warnings: [WatchFaceCompatibilityWarning] = []
+        let inspection = WatchFaceBINInspector.inspect(face.data, fallbackID: face.id, fallbackName: face.name)
+        if let inspection {
+            if inspection.issues.count > 0 {
+                warnings.append(.structuralIssues(count: inspection.issues.count))
+            }
+            let unresolved = inspection.faces.flatMap(\.elements).filter { $0.widgetType == "unresolved-widget-reference" }.count
+            if unresolved > 0 { warnings.append(.unresolvedWidgets(count: unresolved)) }
+            if inspection.resourceEncodingSummary.contains("RAW BGRA32") {
+                warnings.append(.foreignResourceEncoding(summary: inspection.resourceEncodingSummary))
+            }
+        }
 
         if let expected = rules.expectedFaceCount, face.faceCount != expected {
             warnings.append(.faceStyleCountDiffers(
@@ -86,7 +119,8 @@ enum WatchFaceCompatibilityAnalyzer {
             return WatchFaceCompatibilityReport(
                 previewSize: nil,
                 preview: nil,
-                warnings: warnings
+                warnings: warnings,
+                inspection: inspection
             )
         }
 
@@ -105,7 +139,8 @@ enum WatchFaceCompatibilityAnalyzer {
         return WatchFaceCompatibilityReport(
             previewSize: size,
             preview: preview,
-            warnings: warnings
+            warnings: warnings,
+            inspection: inspection
         )
     }
 }
