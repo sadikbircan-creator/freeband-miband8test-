@@ -274,7 +274,8 @@ enum WatchFaceCompatibilityAnalyzer {
                 guard let definition = widgetDefinitions[element.reference],
                       definition.length >= 12,
                       definition.offset >= 0,
-                      definition.offset <= bytes.count - min(definition.length, bytes.count) else {
+                      definition.offset <= bytes.count,
+                      definition.length <= bytes.count - definition.offset else {
                     skipped += 1
                     continue
                 }
@@ -290,9 +291,10 @@ enum WatchFaceCompatibilityAnalyzer {
                     let align = Int(bytes[p + 3]) & 0x03
                     let leadingZero = ((Int(bytes[p + 3]) >> 2) & 1) == 1
                     let spacing = definition.length > 13 ? (Int(bytes[p + 13]) < 128 ? Int(bytes[p + 13]) : Int(bytes[p + 13]) - 256) : 0
+                    let rawValue = String(value)
                     let formatted = leadingZero
                         ? String(format: "%0*d", digitCount, value)
-                        : String(value)
+                        : String(rawValue.suffix(digitCount))
                     let glyphs = formatted.compactMap { character -> MiWatchFacePreview? in
                         if character == "-" { return frames.count > 10 ? frames[10] : frames[0] }
                         guard let digit = character.wholeNumberValue, digit >= 0, digit < 10 else { return nil }
