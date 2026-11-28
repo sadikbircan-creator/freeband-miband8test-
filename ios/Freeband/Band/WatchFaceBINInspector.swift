@@ -115,10 +115,12 @@ enum WatchFaceBINInspector {
 
     private static let tableSpecs: [TableSpec] = [
         .init(id: 0, name: "Elements", countOffset: 0x08, pointerOffset: 0x0C),
+        .init(id: 1, name: "Unknown table 1", countOffset: 0x10, pointerOffset: 0x14),
         .init(id: 2, name: "Images", countOffset: 0x18, pointerOffset: 0x1C),
         .init(id: 3, name: "Image lists", countOffset: 0x20, pointerOffset: 0x24),
         .init(id: 4, name: "Animations", countOffset: 0x28, pointerOffset: 0x2C),
         .init(id: 5, name: "JavaScript resources", countOffset: 0x30, pointerOffset: 0x34),
+        .init(id: 6, name: "Unknown table 6", countOffset: 0x38, pointerOffset: 0x3C),
         .init(id: 7, name: "Widget definitions", countOffset: 0x40, pointerOffset: 0x44),
         .init(id: 8, name: "Editable definitions", countOffset: 0x48, pointerOffset: 0x4C),
         .init(id: 9, name: "Extended definitions", countOffset: 0x50, pointerOffset: 0x54)
@@ -214,9 +216,14 @@ enum WatchFaceBINInspector {
                 ))
             }
 
-            let widgetRecords = Dictionary(
-                uniqueKeysWithValues: (recordsByTable[7] ?? []).filter(\.isValid).map { ($0.index, $0) }
-            )
+            var widgetRecords: [Int: WatchFaceBINInspection.TableRecord] = [:]
+            for record in (recordsByTable[7] ?? []) where record.isValid {
+                if widgetRecords[record.index] == nil {
+                    widgetRecords[record.index] = record
+                } else {
+                    issues.append("Face \\(faceIndex + 1): duplicate widget definition index \\(record.index).")
+                }
+            }
             var elements: [WatchFaceBINInspection.Element] = []
             for (elementIndex, record) in (recordsByTable[0] ?? []).enumerated() where record.isValid && record.length >= 8 {
                 let p = record.offset
@@ -310,8 +317,8 @@ enum WatchFaceBINInspector {
         let uniqueEncodings = Set(encodings)
         let encodingSummary: String
         if uniqueEncodings.isEmpty { encodingSummary = "No image resource encoding could be identified." }
-        else if uniqueEncodings == ["RLE"] { encodingSummary = "RLE-compressed image resources (Band 8 reference-like)." }
-        else if uniqueEncodings == ["RAW-BGRA32"] { encodingSummary = "RAW BGRA32 image resources (Band 10 reference-like)." }
+        else if uniqueEncodings.count == 1 && uniqueEncodings.contains("RLE") { encodingSummary = "RLE-compressed image resources (Band 8 reference-like)." }
+        else if uniqueEncodings.count == 1 && uniqueEncodings.contains("RAW-BGRA32") { encodingSummary = "RAW BGRA32 image resources (Band 10 reference-like)." }
         else { encodingSummary = "Mixed image resource encodings: " + uniqueEncodings.sorted().joined(separator: ", ") + "." }
 
         return WatchFaceBINInspection(
