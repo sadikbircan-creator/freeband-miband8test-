@@ -57,7 +57,7 @@ struct WatchFaceBINInspectorView: View {
                             }
                             Text(String(format: "offset 0x%08X · %@", table.offset, table.isValid ? "valid" : "invalid"))
                                 .font(.caption.monospaced())
-                                .foregroundStyle(table.isValid ? .secondary : .red)
+                                .foregroundStyle(table.isValid ? Color.secondary : Color.red)
                         }
                     }
                 } header: {
