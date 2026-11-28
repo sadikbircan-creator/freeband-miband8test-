@@ -1,5 +1,5 @@
 // Prints MiProtocol outputs for fixed inputs; check_vectors.py recomputes them independently.
-// Build: swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift main.swift -o /tmp/mitest
+// Build: swiftc ../../Freeband/Band/MiProtocol.swift ../../Freeband/Band/MiProtocolV1.swift ../../Freeband/Band/MiBind.swift ../../Freeband/Band/WatchFaces.swift ../../Freeband/Band/MiWatchFaceUpload.swift ../../Freeband/Band/MiWatchFacePreview.swift ../../Freeband/Band/WatchFaceCompatibility.swift ../../Freeband/Band/WatchFaceProfiles.swift ../../Freeband/Band/WatchFaceBINInspector.swift main.swift -o /tmp/mitest
 // Run with TZ=UTC: check_vectors.py formats notify_cmd's timestamp in UTC.
 import CryptoKit
 import Foundation
@@ -342,6 +342,71 @@ let compatibility = WatchFaceProfile.band8.analyze(parsedMetadata)
 precondition(compatibility.previewSize == WatchFacePreviewSize(width: 2, height: 2))
 precondition(compatibility.preview != nil)
 precondition(compatibility.warnings.contains(where: { $0.id == "previewDimensionsDiffer" }))
+
+func writeU16(_ value: Int, at offset: Int, in data: inout Data) {
+    data[offset] = UInt8(value & 0xFF)
+    data[offset + 1] = UInt8((value >> 8) & 0xFF)
+}
+func writeU32(_ value: Int, at offset: Int, in data: inout Data) {
+    for index in 0..<4 { data[offset + index] = UInt8((value >> (index * 8)) & 0xFF) }
+}
+
+// The preview decoder must accept tall, valid RAW BGRA previews without unbounded allocations.
+let tallWidth = 212
+let tallHeight = 520
+let tallPixelBytes = tallWidth * tallHeight * 4
+var tallPreviewFile = Data(repeating: 0, count: 0xA8)
+tallPreviewFile.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
+writeU32(0xA8, at: 0x20, in: &tallPreviewFile)
+var tallImageBlock = Data([0, 0, 0, 0, UInt8(tallWidth), 0,
+                           UInt8(tallHeight & 0xFF), UInt8((tallHeight >> 8) & 0xFF)])
+var tallLength = Data()
+for index in 0..<4 { tallLength.append(UInt8((tallPixelBytes >> (index * 8)) & 0xFF)) }
+tallImageBlock.append(tallLength)
+tallImageBlock.append(Data(repeating: 0x7F, count: tallPixelBytes))
+tallPreviewFile.append(tallImageBlock)
+let tallDecoded = MiWatchFacePreview.decode(tallPreviewFile)
+precondition(tallDecoded?.width == 212 && tallDecoded?.height == 520)
+precondition(tallDecoded?.rgba.count == tallPixelBytes)
+
+// Structural inspector fixture: one element points to a widget definition and an opaque reserved block.
+var inspectorFixture = Data(repeating: 0, count: 0x180)
+inspectorFixture.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
+writeU16(1, at: 0x1C, in: &inspectorFixture)
+writeU16(1, at: 0x1E, in: &inspectorFixture)
+inspectorFixture.replaceSubrange(0x28..<0x34, with: Data("167210065123".utf8))
+inspectorFixture.replaceSubrange(0x68..<0x73, with: Data("Inspector".utf8))
+let faceHeader = 0xA8
+inspectorFixture[faceHeader + 3] = 0x80
+writeU32(1, at: faceHeader + 0x08, in: &inspectorFixture)
+writeU32(0x110, at: faceHeader + 0x0C, in: &inspectorFixture)
+writeU32(1, at: faceHeader + 0x38, in: &inspectorFixture)
+writeU32(0x120, at: faceHeader + 0x3C, in: &inspectorFixture)
+writeU32(1, at: faceHeader + 0x40, in: &inspectorFixture)
+writeU32(0x130, at: faceHeader + 0x44, in: &inspectorFixture)
+// Element definition table record.
+writeU16(0, at: 0x110, in: &inspectorFixture)
+writeU32(0x150, at: 0x118, in: &inspectorFixture)
+writeU32(8, at: 0x11C, in: &inspectorFixture)
+// Opaque table 6 definition record.
+writeU16(5, at: 0x120, in: &inspectorFixture)
+writeU32(0x170, at: 0x128, in: &inspectorFixture)
+writeU32(4, at: 0x12C, in: &inspectorFixture)
+inspectorFixture.replaceSubrange(0x170..<0x174, with: Data([0xDE, 0xAD, 0xBE, 0xEF]))
+// Widget definition record and its data-source bytes.
+writeU16(7, at: 0x130, in: &inspectorFixture)
+writeU32(0x158, at: 0x138, in: &inspectorFixture)
+writeU32(20, at: 0x13C, in: &inspectorFixture)
+inspectorFixture.replaceSubrange(0x150..<0x158, with: Data([7, 0, 0, 7, 22, 0, 33, 0]))
+inspectorFixture.replaceSubrange(0x158..<0x15C, with: Data([0x34, 0x12, 0, 0x10]))
+let inspectedBIN = WatchFaceBINInspector.inspect(inspectorFixture)!
+precondition(inspectedBIN.header.faceCount == 1)
+precondition(inspectedBIN.faces.first?.elements.first?.x == 22)
+precondition(inspectedBIN.faces.first?.elements.first?.y == 33)
+precondition(inspectedBIN.faces.first?.elements.first?.widgetType == "digit-widget")
+precondition(inspectedBIN.faces.first?.elements.first?.dataSource == "341200")
+precondition(inspectedBIN.unknownBlocks.first?.raw == Data([0xDE, 0xAD, 0xBE, 0xEF]))
+precondition((try? inspectedBIN.jsonData()) != nil)
 
 let genericRules = WatchFaceCompatibilityRules(
     previewReferenceSize: WatchFacePreviewSize(width: 2, height: 2),
