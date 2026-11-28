@@ -117,7 +117,8 @@ struct WatchFaceManagementView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         WatchFacePreviewPairView(
                             normalPreview: compatibilityReport?.preview,
-                            aodPreview: compatibilityReport?.aodPreview
+                            aodPreview: compatibilityReport?.aodPreview,
+                            aodNote: compatibilityReport?.aodPreviewNote
                         )
                         Text(importedFace.name)
                             .font(.headline)
