@@ -16,6 +16,19 @@ struct WatchFaceBINInspectorView: View {
     var body: some View {
         List {
             Section {
+                WatchFacePreviewPairView(
+                    normalPreview: MiWatchFacePreview.decode(data),
+                    aodPreview: WatchFaceCompatibilityAnalyzer.decodeAODPreview(
+                        data,
+                        inspection: inspection,
+                        matching: MiWatchFacePreview.decode(data)
+                    )
+                )
+            } header: {
+                Text("Screen previews")
+            }
+
+            Section {
                 LabeledContent(String(localized: "File size"), value: data.count.formatted(.byteCount(style: .file)))
                 LabeledContent(String(localized: "Signature"), value: inspection.header.signature)
                 LabeledContent(String(localized: "Face ID"), value: inspection.header.id)
@@ -262,6 +275,71 @@ struct WatchFaceBINInspectorView: View {
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
+    }
+
+    private func makeImage(_ preview: MiWatchFacePreview) -> UIImage? {
+        let bytes = [UInt8](preview.rgba)
+        guard bytes.count == preview.width * preview.height * 4,
+              let providerData = bytes.withUnsafeBufferPointer({
+                  CFDataCreate(kCFAllocatorDefault, $0.baseAddress, $0.count)
+              }),
+              let provider = CGDataProvider(data: providerData),
+              let image = CGImage(width: preview.width, height: preview.height,
+                                  bitsPerComponent: 8, bitsPerPixel: 32,
+                                  bytesPerRow: preview.width * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                  provider: provider, decode: nil,
+                                  shouldInterpolate: true, intent: .defaultIntent) else { return nil }
+        return UIImage(cgImage: image)
+    }
+}
+
+
+/// Side-by-side normal and always-on display previews. An AOD panel is shown as unavailable
+/// unless the BIN contains a full-display-sized image resource for its AOD face.
+struct WatchFacePreviewPairView: View {
+    let normalPreview: MiWatchFacePreview?
+    let aodPreview: MiWatchFacePreview?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            previewColumn(title: String(localized: "Normal"), preview: normalPreview,
+                          unavailable: String(localized: "Normal preview unavailable"))
+            previewColumn(title: String(localized: "AOD"), preview: aodPreview,
+                          unavailable: String(localized: "AOD preview unavailable"))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func previewColumn(title: String, preview: MiWatchFacePreview?, unavailable: String) -> some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            if let preview, let image = makeImage(preview) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 190)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.secondary.opacity(0.12))
+                    Text(unavailable)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(8)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 190)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func makeImage(_ preview: MiWatchFacePreview) -> UIImage? {
