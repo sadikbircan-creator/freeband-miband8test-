@@ -36,27 +36,28 @@ struct MiWatchFacePreview: Equatable {
     /// Decodes the main embedded preview into premultiplied RGBA pixels.
     /// Unsupported preview encodings simply produce no preview; the BIN itself remains untouched.
     static func decode(_ data: Data) -> MiWatchFacePreview? {
-        let b = [UInt8](data)
-        guard b.count >= 0x24 else { return nil }
-        func u16(_ o: Int) -> Int {
-            Int(b[o]) | (Int(b[o + 1]) << 8)
-        }
-        func u32(_ o: Int) -> Int? {
-            let value = UInt64(b[o]) | (UInt64(b[o + 1]) << 8) |
-                (UInt64(b[o + 2]) << 16) | (UInt64(b[o + 3]) << 24)
-            return value <= UInt64(Int.max) ? Int(value) : nil
-        }
-        guard let offset = u32(0x20), offset > 0, offset + 12 <= b.count else { return nil }
-        let sign = Int(b[offset])
-        let width = u16(offset + 4)
-        let height = u16(offset + 6)
-        guard width > 0, height > 0,
-              width <= 4096, height <= 4096,
-              width <= 2_000_000 / height,
-              let payloadLength = u32(offset + 8), payloadLength > 0,
-              payloadLength <= b.count - offset - 12 else { return nil }
+        let bytes = [UInt8](data)
+        guard bytes.count >= 0x24,
+              let offset = readU32(bytes, 0x20),
+              offset > 0, offset <= bytes.count - 12 else { return nil }
+        let payloadLength = readU32(bytes, offset + 8) ?? -1
+        guard payloadLength > 0, payloadLength <= bytes.count - offset - 12 else { return nil }
+        return decodeBlock(Data(bytes[offset..<(offset + 12 + payloadLength)]))
+    }
 
-        var pixels = Array(b[(offset + 12)..<(offset + 12 + payloadLength)])
+    /// Decodes a standalone image resource block (12-byte image header + pixel payload).
+    static func decodeBlock(_ block: Data) -> MiWatchFacePreview? {
+        let b = [UInt8](block)
+        guard b.count >= 12 else { return nil }
+        let sign = Int(b[0])
+        let width = Int(b[4]) | (Int(b[5]) << 8)
+        let height = Int(b[6]) | (Int(b[7]) << 8)
+        let payloadLength = readU32(b, 8) ?? -1
+        guard width > 0, height > 0, width <= 4096, height <= 4096,
+              width <= 2_000_000 / height,
+              payloadLength > 0, payloadLength <= b.count - 12 else { return nil }
+
+        var pixels = Array(b[12..<(12 + payloadLength)])
         var bytesPerPixel: Int
         if pixels.count >= 8 && Array(pixels[0..<4]) == [0xE0, 0x21, 0xA5, 0x5A] {
             let info = UInt32(pixels[4]) | (UInt32(pixels[5]) << 8) |
@@ -139,6 +140,47 @@ struct MiWatchFacePreview: Equatable {
         }
 
         return MiWatchFacePreview(width: width, height: height, rgba: Data(rgba))
+    }
+
+    /// Decodes the frames in an image-list resource, retaining the original frame order.
+    static func decodeImageListBlock(_ block: Data) -> [MiWatchFacePreview] {
+        let b = [UInt8](block)
+        guard b.count >= 12 else { return [] }
+        let sign = b[0]
+        let count = Int(b[1])
+        let flags = b[2]
+        let width = Int(b[4]) | (Int(b[5]) << 8)
+        let height = Int(b[6]) | (Int(b[7]) << 8)
+        let totalLength = readU32(b, 8) ?? -1
+        guard count > 0, count <= 64, width > 0, height > 0,
+              width <= 4096, height <= 4096, width <= 2_000_000 / height,
+              totalLength > 0, totalLength <= b.count - 12 else { return [] }
+
+        let hasLengthTable = flags == 4 || flags == 8
+        let dataStart = 12 + (hasLengthTable ? count * 4 : 0)
+        guard dataStart <= b.count else { return [] }
+        var cursor = dataStart
+        var frames: [MiWatchFacePreview] = []
+        for index in 0..<count {
+            let length = hasLengthTable ? (readU32(b, 12 + index * 4) ?? -1) : totalLength / count
+            guard length > 0, cursor <= b.count, length <= b.count - cursor else { return [] }
+            var imageBlock = Data([sign, 0, 0, 0, UInt8(width & 0xFF), UInt8((width >> 8) & 0xFF),
+                                   UInt8(height & 0xFF), UInt8((height >> 8) & 0xFF)])
+            imageBlock.append(contentsOf: [UInt8(length & 0xFF), UInt8((length >> 8) & 0xFF),
+                                          UInt8((length >> 16) & 0xFF), UInt8((length >> 24) & 0xFF)])
+            imageBlock.append(contentsOf: b[cursor..<(cursor + length)])
+            guard let frame = decodeBlock(imageBlock) else { return [] }
+            frames.append(frame)
+            cursor += length
+        }
+        return frames
+    }
+
+    private static func readU32(_ bytes: [UInt8], _ offset: Int) -> Int? {
+        guard offset >= 0, offset <= bytes.count - 4 else { return nil }
+        let value = UInt64(bytes[offset]) | (UInt64(bytes[offset + 1]) << 8) |
+            (UInt64(bytes[offset + 2]) << 16) | (UInt64(bytes[offset + 3]) << 24)
+        return value <= UInt64(Int.max) ? Int(value) : nil
     }
 
     private static func decodeRLE10(_ input: [UInt8], expected: Int, bytesPerPixel: Int) -> [UInt8]? {
