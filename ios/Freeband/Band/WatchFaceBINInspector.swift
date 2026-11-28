@@ -137,6 +137,10 @@ enum WatchFaceBINInspector {
               faceCount > 0, faceCount <= maximumFaces else { return nil }
 
         let namedLayout = hasNamedFaceRecords(bytes, faceCount: faceCount)
+        let lastFaceHeader = faceHeaderOffset(faceCount - 1, named: namedLayout)
+        // A preview-only metadata fixture can declare multiple styles without containing
+        // the face-definition section. Do not misinterpret preview bytes as face headers.
+        guard isRangeValid(lastFaceHeader, faceHeaderSize, bytes.count) else { return nil }
         let layoutName = namedLayout ? "named-face-records" : "legacy-face-records"
         let previewOffset = readU32(bytes, 0x20) ?? 0
         let id = readCString(bytes, 0x28, 0x40) ?? fallbackID
