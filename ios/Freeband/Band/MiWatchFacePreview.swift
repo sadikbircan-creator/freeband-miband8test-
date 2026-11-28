@@ -50,7 +50,9 @@ struct MiWatchFacePreview: Equatable {
         let sign = Int(b[offset])
         let width = u16(offset + 4)
         let height = u16(offset + 6)
-        guard width > 0, height > 0, width <= 512, height <= 512,
+        guard width > 0, height > 0,
+              width <= 4096, height <= 4096,
+              width <= 2_000_000 / height,
               let payloadLength = u32(offset + 8), payloadLength > 0,
               payloadLength <= b.count - offset - 12 else { return nil }
 
