@@ -375,7 +375,7 @@ inspectorFixture.replaceSubrange(0..<4, with: Data([0x5A, 0xA5, 0x34, 0x12]))
 writeU16(1, at: 0x1C, in: &inspectorFixture)
 writeU16(1, at: 0x1E, in: &inspectorFixture)
 inspectorFixture.replaceSubrange(0x28..<0x34, with: Data("167210065123".utf8))
-inspectorFixture.replaceSubrange(0x68..<0x73, with: Data("Inspector".utf8))
+inspectorFixture.replaceSubrange(0x68..<0x73, with: Data("Inspector".utf8) + Data(repeating: 0, count: 2))
 let faceHeader = 0xA8
 inspectorFixture[faceHeader + 3] = 0x80
 writeU32(1, at: faceHeader + 0x08, in: &inspectorFixture)
