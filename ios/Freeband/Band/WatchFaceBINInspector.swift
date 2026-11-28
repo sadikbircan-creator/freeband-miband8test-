@@ -234,8 +234,8 @@ enum WatchFaceBINInspector {
                 let p = record.offset
                 let reference = readU24(bytes, p) ?? 0
                 let referenceType = Int(bytes[p + 3])
-                let x = readU16(bytes, p + 4) ?? 0
-                let y = readU16(bytes, p + 6) ?? 0
+                let x = readI16(bytes, p + 4) ?? 0
+                let y = readI16(bytes, p + 6) ?? 0
                 let widget = referenceType == 7 ? widgetRecords[reference] : nil
                 var widgetType: String?
                 var dataSource: String?
@@ -350,6 +350,12 @@ enum WatchFaceBINInspector {
     private static func readU16(_ bytes: [UInt8], _ offset: Int) -> Int? {
         guard isRangeValid(offset, 2, bytes.count) else { return nil }
         return Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
+    }
+
+    private static func readI16(_ bytes: [UInt8], _ offset: Int) -> Int? {
+        guard isRangeValid(offset, 2, bytes.count) else { return nil }
+        let value = Int16(bitPattern: UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8))
+        return Int(value)
     }
 
     private static func readU24(_ bytes: [UInt8], _ offset: Int) -> Int? {
