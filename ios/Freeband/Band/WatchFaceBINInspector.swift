@@ -62,6 +62,7 @@ struct WatchFaceBINInspection: Codable, Equatable {
         let id: Int
         let headerOffset: Int
         let name: String?
+        let role: String
         let tables: [Table]
         let elements: [Element]
         let images: [ImageResource]
@@ -307,6 +308,7 @@ enum WatchFaceBINInspector {
                 id: faceIndex,
                 headerOffset: headerOffset,
                 name: faceName,
+                role: isAODFace(index: faceIndex, styleCount: styleCount, faceCount: faceCount) ? "AOD" : "normal/style",
                 tables: tables,
                 elements: elements,
                 images: images,
@@ -370,6 +372,12 @@ enum WatchFaceBINInspector {
         let value = String(decoding: field[..<end], as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    private static func isAODFace(index: Int, styleCount: Int, faceCount: Int) -> Bool {
+        guard faceCount > styleCount else { return false }
+        if index == 1 { return faceCount > 1 }
+        return styleCount > 1 && index >= styleCount - 1
     }
 
     private static func faceHeaderOffset(_ index: Int, named: Bool) -> Int {
