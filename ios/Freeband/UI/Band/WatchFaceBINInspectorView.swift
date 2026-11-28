@@ -13,16 +13,22 @@ struct WatchFaceBINInspectorView: View {
     @State private var share: ShareItem?
     @State private var exportError: String?
 
+    private var normalPreview: MiWatchFacePreview? { MiWatchFacePreview.decode(data) }
+    private var aodPreviewResult: WatchFaceCompatibilityAnalyzer.AODPreviewResult? {
+        WatchFaceCompatibilityAnalyzer.composeAODPreview(
+            data,
+            inspection: inspection,
+            canvasSize: normalPreview.map { WatchFacePreviewSize(width: $0.width, height: $0.height) }
+        )
+    }
+
     var body: some View {
         List {
             Section {
                 WatchFacePreviewPairView(
-                    normalPreview: MiWatchFacePreview.decode(data),
-                    aodPreview: WatchFaceCompatibilityAnalyzer.decodeAODPreview(
-                        data,
-                        inspection: inspection,
-                        matching: MiWatchFacePreview.decode(data)
-                    )
+                    normalPreview: normalPreview,
+                    aodPreview: aodPreviewResult?.preview,
+                    aodNote: aodPreviewResult?.note
                 )
             } header: {
                 Text("Screen previews")
@@ -301,13 +307,22 @@ struct WatchFaceBINInspectorView: View {
 struct WatchFacePreviewPairView: View {
     let normalPreview: MiWatchFacePreview?
     let aodPreview: MiWatchFacePreview?
+    var aodNote: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             previewColumn(title: String(localized: "Normal"), preview: normalPreview,
                           unavailable: String(localized: "Normal preview unavailable"))
-            previewColumn(title: String(localized: "AOD"), preview: aodPreview,
-                          unavailable: String(localized: "AOD preview unavailable"))
+            VStack(spacing: 5) {
+                previewColumn(title: String(localized: "AOD"), preview: aodPreview,
+                              unavailable: String(localized: "AOD preview unavailable"))
+                if let aodNote {
+                    Text(aodNote)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
         }
         .frame(maxWidth: .infinity)
     }
