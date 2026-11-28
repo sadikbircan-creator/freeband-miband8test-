@@ -45,6 +45,7 @@ struct WatchFaceBINInspectorView: View {
                     if let name = face.name {
                         LabeledContent(String(localized: "Face name"), value: name)
                     }
+                    LabeledContent(String(localized: "Face role"), value: face.role)
                     ForEach(face.tables) { table in
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
