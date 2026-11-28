@@ -414,8 +414,48 @@ let genericRules = WatchFaceCompatibilityRules(
     expectedFaceCount: nil,
     expectedFaceCountLabel: nil
 )
+
 let genericReport = WatchFaceCompatibilityAnalyzer.analyze(parsedMetadata, rules: genericRules)
 precondition(genericReport.warnings.isEmpty)
+
+// AOD composition places standalone image resources at element X/Y coordinates on a black canvas.
+var aodImageBlock = Data([0, 0, 0, 0, 2, 0, 2, 0, 16, 0, 0, 0])
+aodImageBlock.append(contentsOf: [
+    0, 0, 255, 255, 0, 255, 0, 255,
+    255, 0, 0, 255, 255, 255, 255, 255
+])
+var aodSource = Data(repeating: 0, count: 0x20)
+aodSource.replaceSubrange(0x10..<0x20, with: aodImageBlock.prefix(16))
+aodSource.append(aodImageBlock.dropFirst(16))
+let aodElement = WatchFaceBINInspection.Element(
+    id: "aod-element-0", reference: 4, referenceType: 2, x: 1, y: 1,
+    widgetType: nil, dataSource: nil, raw: Data()
+)
+let aodResource = WatchFaceBINInspection.ImageResource(
+    id: "aod-image-4", table: 2, index: 4, offset: 0x10, length: aodImageBlock.count,
+    width: 2, height: 2, frameCount: nil, encoding: "RAW-BGRA32", isValid: true
+)
+let normalFace = WatchFaceBINInspection.Face(
+    id: 0, headerOffset: 0xA8, name: nil, role: "normal/style",
+    tables: [], elements: [], images: [], rawHeader: Data()
+)
+let aodFace = WatchFaceBINInspection.Face(
+    id: 1, headerOffset: 0x100, name: nil, role: "AOD",
+    tables: [], elements: [aodElement], images: [aodResource], rawHeader: Data()
+)
+let aodInspection = WatchFaceBINInspection(
+    header: .init(signature: "5A A5 34 12", fileSize: aodSource.count, faceCount: 2,
+                  styleCount: 1, previewOffset: 0, faceLayout: "fixture", id: "1",
+                  name: "AOD fixture", raw: Data()),
+    faces: [normalFace, aodFace], unknownBlocks: [], issues: [],
+    resourceEncodingSummary: "RAW-BGRA32"
+)
+let aodResult = WatchFaceCompatibilityAnalyzer.composeAODPreview(
+    aodSource, inspection: aodInspection, canvasSize: WatchFacePreviewSize(width: 3, height: 3)
+)
+precondition(aodResult?.preview.width == 3 && aodResult?.preview.height == 3)
+precondition(Array(aodResult!.preview.rgba[(1 * 3 + 1) * 4..<(1 * 3 + 1) * 4 + 4]) == [255, 0, 0, 255])
+precondition(Array(aodResult!.preview.rgba[0..<4]) == [0, 0, 0, 255])
 
 
 var oneStyleFile = metadataFile
