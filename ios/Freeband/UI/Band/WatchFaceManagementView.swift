@@ -15,6 +15,7 @@ struct WatchFaceManagementView: View {
     @State private var showingImporter = false
     @State private var importedFace: ImportedWatchFace?
     @State private var compatibilityReport: WatchFaceCompatibilityReport?
+    @State private var showingInspector = false
     @State private var showingInstallConfirmation = false
     @State private var activeAlert: WatchFaceAlert?
     @State private var importError: String?
@@ -140,9 +141,17 @@ struct WatchFaceManagementView: View {
                                 .foregroundStyle(.secondary)
                         }
                         if compatibilityReport != nil {
-                            Text(String(localized: "These checks cover preview metadata and style count only. They do not verify widget layout, data sources or AOD rendering on the band."))
+                            Text(String(localized: "The inspector reads face tables, element coordinates, widget references and image-resource metadata. It cannot guarantee how the band firmware will render every element or data source."))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if compatibilityReport?.inspection != nil {
+                                Button {
+                                    showingInspector = true
+                                } label: {
+                                    Label(String(localized: "Inspect BIN structure"), systemImage: "doc.text.magnifyingglass")
+                                }
+                                .buttonStyle(.bordered)
+                            }
                         }
                         if let report = compatibilityReport, report.hasWarnings {
                             VStack(alignment: .leading, spacing: 6) {
@@ -191,6 +200,13 @@ struct WatchFaceManagementView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .sheet(isPresented: $showingInspector) {
+            if let inspection = compatibilityReport?.inspection, let importedFace {
+                NavigationStack {
+                    WatchFaceBINInspectorView(data: importedFace.data, inspection: inspection)
+                }
+            }
+        }
         .navigationTitle(String(localized: "Watch faces"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
