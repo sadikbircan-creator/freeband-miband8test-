@@ -142,6 +142,15 @@ enum WatchFaceCompatibilityAnalyzer {
         let aodPreview = inspection.flatMap { decodeAODPreview(face.data, inspection: $0, matching: preview) }
 
 
+
+        return WatchFaceCompatibilityReport(
+            previewSize: size,
+            preview: preview,
+            aodPreview: aodPreview,
+            warnings: warnings,
+            inspection: inspection
+        )
+    }
     /// Returns an AOD face image only when the BIN contains a complete display-sized
     /// resource for its AOD face. Smaller widget assets are not presented as a screen preview.
     static func decodeAODPreview(
@@ -170,12 +179,4 @@ enum WatchFaceCompatibilityAnalyzer {
         return nil
     }
 
-        return WatchFaceCompatibilityReport(
-            previewSize: size,
-            preview: preview,
-            aodPreview: aodPreview,
-            warnings: warnings,
-            inspection: inspection
-        )
-    }
 }
