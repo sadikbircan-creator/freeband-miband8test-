@@ -132,9 +132,9 @@ enum WatchFaceBINInspector {
         guard bytes.count >= mainHeaderSize,
               Array(bytes[0..<4]) == [0x5A, 0xA5, 0x34, 0x12] else { return nil }
 
-        let faceCount = readU16(bytes, 0x1C)
-        let styleCount = readU16(bytes, 0x1E)
-        guard faceCount > 0, faceCount <= maximumFaces else { return nil }
+        guard let faceCount = readU16(bytes, 0x1C),
+              let styleCount = readU16(bytes, 0x1E),
+              faceCount > 0, faceCount <= maximumFaces else { return nil }
 
         let namedLayout = hasNamedFaceRecords(bytes, faceCount: faceCount)
         let layoutName = namedLayout ? "named-face-records" : "legacy-face-records"
@@ -201,7 +201,7 @@ enum WatchFaceBINInspector {
                                 tableID: spec.id,
                                 recordIndex: recordIndex,
                                 offset: resourceOffset,
-                                raw: Data(bytes[resourceOffset..<(resourceOffset + resourceLength)])
+                                raw: Data(bytes.dropFirst(resourceOffset).prefix(resourceLength))
                             ))
                         }
                     }
@@ -269,11 +269,12 @@ enum WatchFaceBINInspector {
                     let width = readU16(bytes, p + 4) ?? 0
                     let height = readU16(bytes, p + 6) ?? 0
                     let payloadLength = readU32(bytes, p + 8) ?? -1
-                    let payloadStart = p + 12
                     let payloadValid = payloadLength >= 0 && payloadLength <= record.length - 12
-                    let isRLE = payloadValid && payloadLength >= 4 &&
-                        bytes[payloadStart] == 0xE0 && bytes[payloadStart + 1] == 0x21 &&
-                        bytes[payloadStart + 2] == 0xA5 && bytes[payloadStart + 3] == 0x5A
+                    let hasFrameLengthTable = tableID == 3 && (bytes[p + 2] == 4 || bytes[p + 2] == 8)
+                    let firstFrameOffset = p + 12 + (hasFrameLengthTable ? (frameCount ?? 0) * 4 : 0)
+                    let isRLE = payloadValid && firstFrameOffset <= p + record.length - 4 &&
+                        bytes[firstFrameOffset] == 0xE0 && bytes[firstFrameOffset + 1] == 0x21 &&
+                        bytes[firstFrameOffset + 2] == 0xA5 && bytes[firstFrameOffset + 3] == 0x5A
                     let encoding: String
                     if !payloadValid { encoding = "unknown-or-invalid" }
                     else if isRLE { encoding = "RLE" }
@@ -287,7 +288,7 @@ enum WatchFaceBINInspector {
                         default: encoding = "RAW-BGRA32"
                         }
                     }
-                    if tableID == 2 { encodings.append(encoding) }
+                    encodings.append(encoding)
                     images.append(.init(
                         id: "\(faceIndex)-\(tableID)-\(record.index)",
                         table: tableID,
@@ -385,9 +386,14 @@ enum WatchFaceBINInspector {
     }
 
     private static func hasNamedFaceRecords(_ bytes: [UInt8], faceCount: Int) -> Bool {
-        guard faceCount > 1 else { return false }
-        let candidate = faceHeaderOffset(1, named: true)
-        return looksLikeFaceHeader(bytes, at: candidate)
+        let legacyEnd = mainHeaderSize + faceCount * faceHeaderSize
+        let namedEnd = mainHeaderSize + faceCount * (faceHeaderSize + namedFaceBlockSize)
+        if faceCount > 1 {
+            let candidate = faceHeaderOffset(1, named: true)
+            if looksLikeFaceHeader(bytes, at: candidate) { return true }
+        }
+        let firstElementOffset = readU32(bytes, mainHeaderSize + 0x0C) ?? 0
+        return namedEnd <= bytes.count && firstElementOffset >= namedEnd && firstElementOffset > legacyEnd
     }
 
     private static func looksLikeFaceHeader(_ bytes: [UInt8], at offset: Int) -> Bool {
