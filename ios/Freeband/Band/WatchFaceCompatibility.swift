@@ -77,6 +77,7 @@ struct WatchFaceCompatibilityReport: Equatable {
     let previewSize: WatchFacePreviewSize?
     let preview: MiWatchFacePreview?
     let aodPreview: MiWatchFacePreview?
+    let aodPreviewNote: String?
     let warnings: [WatchFaceCompatibilityWarning]
     let inspection: WatchFaceBINInspection?
 
@@ -122,6 +123,7 @@ enum WatchFaceCompatibilityAnalyzer {
                 previewSize: nil,
                 preview: nil,
                 aodPreview: nil,
+                aodPreviewNote: nil,
                 warnings: warnings,
                 inspection: inspection
             )
@@ -139,44 +141,94 @@ enum WatchFaceCompatibilityAnalyzer {
             warnings.append(.previewDecodeFailed)
         }
 
-        let aodPreview = inspection.flatMap { decodeAODPreview(face.data, inspection: $0, matching: preview) }
-
-
+        let aodResult = inspection.flatMap { composeAODPreview(face.data, inspection: $0, canvasSize: preview.map { WatchFacePreviewSize(width: $0.width, height: $0.height) }) }
 
         return WatchFaceCompatibilityReport(
             previewSize: size,
             preview: preview,
-            aodPreview: aodPreview,
+            aodPreview: aodResult?.preview,
+            aodPreviewNote: aodResult?.note,
             warnings: warnings,
             inspection: inspection
         )
     }
-    /// Returns an AOD face image only when the BIN contains a complete display-sized
-    /// resource for its AOD face. Smaller widget assets are not presented as a screen preview.
-    static func decodeAODPreview(
+    struct AODPreviewResult {
+        let preview: MiWatchFacePreview
+        let note: String
+    }
+
+    /// Reconstructs a conservative AOD preview by placing standalone image resources
+    /// referenced by AOD image elements at their declared X/Y coordinates. Widget,
+    /// animation, and unknown element types are intentionally skipped rather than guessed.
+    static func composeAODPreview(
         _ data: Data,
         inspection: WatchFaceBINInspection,
-        matching normalPreview: MiWatchFacePreview?
-    ) -> MiWatchFacePreview? {
-        guard let normalPreview,
+        canvasSize: WatchFacePreviewSize?
+    ) -> AODPreviewResult? {
+        guard let canvasSize,
+              canvasSize.width > 0, canvasSize.height > 0,
+              canvasSize.width <= 4096, canvasSize.height <= 4096,
+              canvasSize.width <= 2_000_000 / canvasSize.height,
               let aodFace = inspection.faces.first(where: { $0.role == "AOD" }) else { return nil }
 
-        for resource in aodFace.images where resource.isValid &&
-            resource.width == normalPreview.width && resource.height == normalPreview.height {
-            guard resource.offset >= 0, resource.length > 0,
+        let width = canvasSize.width
+        let height = canvasSize.height
+        var canvas = [UInt8](repeating: 0, count: width * height * 4)
+        for pixel in 0..<(width * height) { canvas[pixel * 4 + 3] = 255 }
+
+        let imagesByIndex = Dictionary(
+            aodFace.images.filter { $0.table == 2 && $0.isValid }.map { ($0.index, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var rendered = 0
+        var skipped = 0
+
+        for element in aodFace.elements {
+            guard element.referenceType == 2,
+                  let resource = imagesByIndex[element.reference],
+                  resource.offset >= 0, resource.length >= 12,
                   resource.offset <= data.count,
-                  resource.length <= data.count - resource.offset else { continue }
-            let block = data.subdata(in: resource.offset..<(resource.offset + resource.length))
-            let frames = resource.table == 2
-                ? [MiWatchFacePreview.decodeBlock(block)].compactMap { $0 }
-                : MiWatchFacePreview.decodeImageListBlock(block)
-            if let frame = frames.first(where: {
-                $0.width == normalPreview.width && $0.height == normalPreview.height
-            }) {
-                return frame
+                  resource.length <= data.count - resource.offset else {
+                skipped += 1
+                continue
             }
+
+            let block = data.subdata(in: resource.offset..<(resource.offset + resource.length))
+            guard let image = MiWatchFacePreview.decodeBlock(block),
+                  element.x < width, element.y < height,
+                  element.x + image.width > 0, element.y + image.height > 0 else {
+                skipped += 1
+                continue
+            }
+
+            let left = max(0, element.x)
+            let top = max(0, element.y)
+            let right = min(width, element.x + image.width)
+            let bottom = min(height, element.y + image.height)
+            let source = [UInt8](image.rgba)
+            for y in top..<bottom {
+                for x in left..<right {
+                    let sourceIndex = ((y - element.y) * image.width + (x - element.x)) * 4
+                    let targetIndex = (y * width + x) * 4
+                    let alpha = Int(source[sourceIndex + 3])
+                    let inverseAlpha = 255 - alpha
+                    canvas[targetIndex] = UInt8(min(255, Int(source[sourceIndex]) + Int(canvas[targetIndex]) * inverseAlpha / 255))
+                    canvas[targetIndex + 1] = UInt8(min(255, Int(source[sourceIndex + 1]) + Int(canvas[targetIndex + 1]) * inverseAlpha / 255))
+                    canvas[targetIndex + 2] = UInt8(min(255, Int(source[sourceIndex + 2]) + Int(canvas[targetIndex + 2]) * inverseAlpha / 255))
+                    canvas[targetIndex + 3] = 255
+                }
+            }
+            rendered += 1
         }
-        return nil
+
+        guard rendered > 0 else { return nil }
+        let note = skipped > 0
+            ? String.localizedStringWithFormat(String(localized: "Reconstructed from %lld image element(s); %lld widget, animation, or unsupported element(s) were not drawn."), Int64(rendered), Int64(skipped))
+            : String.localizedStringWithFormat(String(localized: "Reconstructed from %lld image element(s)."), Int64(rendered))
+        return AODPreviewResult(
+            preview: MiWatchFacePreview(width: width, height: height, rgba: Data(canvas)),
+            note: note
+        )
     }
 
 }
