@@ -76,6 +76,7 @@ enum WatchFaceCompatibilityWarning: Equatable, Identifiable {
 struct WatchFaceCompatibilityReport: Equatable {
     let previewSize: WatchFacePreviewSize?
     let preview: MiWatchFacePreview?
+    let aodPreview: MiWatchFacePreview?
     let warnings: [WatchFaceCompatibilityWarning]
     let inspection: WatchFaceBINInspection?
 
@@ -120,6 +121,7 @@ enum WatchFaceCompatibilityAnalyzer {
             return WatchFaceCompatibilityReport(
                 previewSize: nil,
                 preview: nil,
+                aodPreview: nil,
                 warnings: warnings,
                 inspection: inspection
             )
@@ -137,9 +139,41 @@ enum WatchFaceCompatibilityAnalyzer {
             warnings.append(.previewDecodeFailed)
         }
 
+        let aodPreview = inspection.flatMap { decodeAODPreview(face.data, inspection: $0, matching: preview) }
+
+
+    /// Returns an AOD face image only when the BIN contains a complete display-sized
+    /// resource for its AOD face. Smaller widget assets are not presented as a screen preview.
+    static func decodeAODPreview(
+        _ data: Data,
+        inspection: WatchFaceBINInspection,
+        matching normalPreview: MiWatchFacePreview?
+    ) -> MiWatchFacePreview? {
+        guard let normalPreview,
+              let aodFace = inspection.faces.first(where: { $0.role == "AOD" }) else { return nil }
+
+        for resource in aodFace.images where resource.isValid &&
+            resource.width == normalPreview.width && resource.height == normalPreview.height {
+            guard resource.offset >= 0, resource.length > 0,
+                  resource.offset <= data.count,
+                  resource.length <= data.count - resource.offset else { continue }
+            let block = data.subdata(in: resource.offset..<(resource.offset + resource.length))
+            let frames = resource.table == 2
+                ? [MiWatchFacePreview.decodeBlock(block)].compactMap { $0 }
+                : MiWatchFacePreview.decodeImageListBlock(block)
+            if let frame = frames.first(where: {
+                $0.width == normalPreview.width && $0.height == normalPreview.height
+            }) {
+                return frame
+            }
+        }
+        return nil
+    }
+
         return WatchFaceCompatibilityReport(
             previewSize: size,
             preview: preview,
+            aodPreview: aodPreview,
             warnings: warnings,
             inspection: inspection
         )
