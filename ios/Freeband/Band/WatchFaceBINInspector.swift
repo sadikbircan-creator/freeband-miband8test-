@@ -386,9 +386,9 @@ enum WatchFaceBINInspector {
     }
 
     private static func isAODFace(index: Int, styleCount: Int, faceCount: Int) -> Bool {
-        guard faceCount > styleCount else { return false }
-        if index == 1 { return faceCount > 1 }
-        return styleCount > 1 && index >= styleCount - 1
+        // Reverse-engineered BIN layout stores the normal content first and its AOD
+        // content as the second face record. styleCount is not a reliable AOD discriminator.
+        faceCount >= 2 && index == 1
     }
 
     private static func faceHeaderOffset(_ index: Int, named: Bool) -> Int {
