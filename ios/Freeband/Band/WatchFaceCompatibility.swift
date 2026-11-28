@@ -103,7 +103,8 @@ enum WatchFaceCompatibilityAnalyzer {
             }
             let unresolved = inspection.faces.flatMap(\.elements).filter { $0.widgetType == "unresolved-widget-reference" }.count
             if unresolved > 0 { warnings.append(.unresolvedWidgets(count: unresolved)) }
-            if inspection.resourceEncodingSummary.contains("RAW BGRA32") {
+            if inspection.resourceEncodingSummary.contains("RAW BGRA32") ||
+                inspection.resourceEncodingSummary.contains("RAW-BGRA32") {
                 warnings.append(.foreignResourceEncoding(summary: inspection.resourceEncodingSummary))
             }
         }
