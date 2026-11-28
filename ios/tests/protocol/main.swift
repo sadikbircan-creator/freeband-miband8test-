@@ -455,7 +455,52 @@ let aodResult = WatchFaceCompatibilityAnalyzer.composeAODPreview(
 )
 precondition(aodResult?.preview.width == 3 && aodResult?.preview.height == 3)
 precondition(Array(aodResult!.preview.rgba[(1 * 3 + 1) * 4..<(1 * 3 + 1) * 4 + 4]) == [255, 0, 0, 255])
+
 precondition(Array(aodResult!.preview.rgba[0..<4]) == [0, 0, 0, 255])
+
+// AOD numeric widgets resolve their digit image-list and render sample hour digits at X/Y.
+var numberAODSource = Data(repeating: 0, count: 0x80)
+numberAODSource.replaceSubrange(0x40..<0x4C, with: Data([0x08, 0x11, 2, 0x11, 0, 0, 0, 0, 9, 0, 0, 0]))
+var digitList = Data([0, 10, 4, 0, 1, 0, 1, 0, 40, 0, 0, 0])
+for _ in 0..<10 { digitList.append(contentsOf: [4, 0, 0, 0]) }
+for digit in 0..<10 {
+    // BGRA pixels: digit 1 is red, digit 2 is green, all other glyphs are blue.
+    if digit == 1 { digitList.append(contentsOf: [0, 0, 255, 255]) }
+    else if digit == 2 { digitList.append(contentsOf: [0, 255, 0, 255]) }
+    else { digitList.append(contentsOf: [255, 0, 0, 255]) }
+}
+numberAODSource.append(digitList)
+let numberElement = WatchFaceBINInspection.Element(
+    id: "aod-number-0", reference: 5, referenceType: 7, x: 0, y: 0,
+    widgetType: "digit-widget", dataSource: "081100", raw: Data()
+)
+let numberWidgetRecord = WatchFaceBINInspection.TableRecord(
+    id: "aod-widget-5", index: 5, type: 7, offset: 0x40, length: 12,
+    isValid: true, raw: Data()
+)
+let numberWidgetTable = WatchFaceBINInspection.Table(
+    id: 7, name: "Widget definitions", count: 1, offset: 0x30,
+    isValid: true, records: [numberWidgetRecord]
+)
+let digitListResource = WatchFaceBINInspection.ImageResource(
+    id: "aod-list-9", table: 3, index: 9, offset: 0x80, length: digitList.count,
+    width: 1, height: 1, frameCount: 10, encoding: "RAW-BGRA32", isValid: true
+)
+let numberAODFace = WatchFaceBINInspection.Face(
+    id: 1, headerOffset: 0x100, name: nil, role: "AOD",
+    tables: [numberWidgetTable], elements: [numberElement], images: [digitListResource],
+    rawHeader: Data()
+)
+let numberAODInspection = WatchFaceBINInspection(
+    header: aodInspection.header, faces: [normalFace, numberAODFace],
+    unknownBlocks: [], issues: [], resourceEncodingSummary: "RAW-BGRA32"
+)
+let numberAODResult = WatchFaceCompatibilityAnalyzer.composeAODPreview(
+    numberAODSource, inspection: numberAODInspection,
+    canvasSize: WatchFacePreviewSize(width: 2, height: 1)
+)
+precondition(Array(numberAODResult!.preview.rgba[0..<4]) == [255, 0, 0, 255])
+precondition(Array(numberAODResult!.preview.rgba[4..<8]) == [0, 255, 0, 255])
 
 
 var oneStyleFile = metadataFile
