@@ -49,6 +49,7 @@ jobs:
             SOURCES+=(
               ../../Freeband/Band/WatchFaceCompatibility.swift
               ../../Freeband/Band/WatchFaceProfiles.swift
+              ../../Freeband/Band/WatchFaceBINInspector.swift
             )
           fi
           swiftc "${SOURCES[@]}" main.swift -o /tmp/mitest
