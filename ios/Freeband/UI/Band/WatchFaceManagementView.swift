@@ -115,18 +115,10 @@ struct WatchFaceManagementView: View {
 
                 if let importedFace {
                     VStack(alignment: .leading, spacing: 10) {
-                        if let preview = compatibilityReport?.preview, let previewImage = makePreviewImage(preview) {
-                            Image(uiImage: previewImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxHeight: 190)
-                                .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        } else {
-                            Label(String(localized: "Preview unavailable"), systemImage: "photo")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                        WatchFacePreviewPairView(
+                            normalPreview: compatibilityReport?.preview,
+                            aodPreview: compatibilityReport?.aodPreview
+                        )
                         Text(importedFace.name)
                             .font(.headline)
                         Text("ID: \(importedFace.id)")
