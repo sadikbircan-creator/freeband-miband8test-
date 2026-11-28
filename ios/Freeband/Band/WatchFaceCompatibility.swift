@@ -157,9 +157,9 @@ enum WatchFaceCompatibilityAnalyzer {
         let note: String
     }
 
-    /// Reconstructs a conservative AOD preview by placing standalone image resources
-    /// referenced by AOD image elements at their declared X/Y coordinates. Widget,
-    /// animation, and unknown element types are intentionally skipped rather than guessed.
+    /// Reconstructs an AOD layout from its own face definitions and resources.
+    /// Numeric and image-list widgets use clearly documented sample values; the preview is
+    /// a structural rendering, not a live reading of the watch's current data.
     static func composeAODPreview(
         _ data: Data,
         inspection: WatchFaceBINInspection,
@@ -173,42 +173,50 @@ enum WatchFaceCompatibilityAnalyzer {
 
         let width = canvasSize.width
         let height = canvasSize.height
+        let bytes = [UInt8](data)
         var canvas = [UInt8](repeating: 0, count: width * height * 4)
         for pixel in 0..<(width * height) { canvas[pixel * 4 + 3] = 255 }
 
-        let imagesByIndex = Dictionary(
-            aodFace.images.filter { $0.table == 2 && $0.isValid }.map { ($0.index, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        var rendered = 0
-        var skipped = 0
-
-        for element in aodFace.elements {
-            guard element.referenceType == 2,
-                  let resource = imagesByIndex[element.reference],
-                  resource.offset >= 0, resource.length >= 12,
-                  resource.offset <= data.count,
-                  resource.length <= data.count - resource.offset else {
-                skipped += 1
-                continue
-            }
-
-            let block = data.subdata(in: resource.offset..<(resource.offset + resource.length))
-            guard let image = MiWatchFacePreview.decodeBlock(block),
-                  element.x < width, element.y < height,
-                  element.x + image.width > 0, element.y + image.height > 0 else {
-                skipped += 1
-                continue
-            }
-
-            let left = max(0, element.x)
-            let top = max(0, element.y)
-            let right = min(width, element.x + image.width)
-            let bottom = min(height, element.y + image.height)
+        func u16(_ offset: Int) -> Int? {
+            guard offset >= 0, offset <= bytes.count - 2 else { return nil }
+            return Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
+        }
+        func i16(_ offset: Int) -> Int? {
+            guard let value = u16(offset) else { return nil }
+            return Int(Int16(bitPattern: UInt16(value)))
+        }
+        func u24(_ offset: Int) -> Int? {
+            guard offset >= 0, offset <= bytes.count - 3 else { return nil }
+            return Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8) | (Int(bytes[offset + 2]) << 16)
+        }
+        func block(_ resource: WatchFaceBINInspection.ImageResource) -> Data? {
+            guard resource.isValid, resource.offset >= 0, resource.length >= 12,
+                  resource.offset <= data.count, resource.length <= data.count - resource.offset else { return nil }
+            return data.subdata(in: resource.offset..<(resource.offset + resource.length))
+        }
+        func singleImage(_ index: Int) -> MiWatchFacePreview? {
+            guard let resource = aodFace.images.first(where: { $0.table == 2 && $0.index == index }),
+                  let raw = block(resource) else { return nil }
+            return MiWatchFacePreview.decodeBlock(raw)
+        }
+        func imageList(_ index: Int) -> [MiWatchFacePreview] {
+            guard let resource = aodFace.images.first(where: { $0.table == 3 && $0.index == index }),
+                  let raw = block(resource) else { return [] }
+            return MiWatchFacePreview.decodeImageListBlock(raw)
+        }
+        func draw(_ image: MiWatchFacePreview, at originX: Int, _ originY: Int) -> Bool {
+            guard image.width > 0, image.height > 0,
+                  originX < width, originY < height,
+                  originX + image.width > 0, originY + image.height > 0 else { return false }
+            let left = max(0, originX)
+            let top = max(0, originY)
+            let right = min(width, originX + image.width)
+            let bottom = min(height, originY + image.height)
             let source = [UInt8](image.rgba)
+            guard source.count == image.width * image.height * 4 else { return false }
             for y in top..<bottom {
                 for x in left..<right {
-                    let sourceIndex = ((y - element.y) * image.width + (x - element.x)) * 4
+                    let sourceIndex = ((y - originY) * image.width + (x - originX)) * 4
                     let targetIndex = (y * width + x) * 4
                     let alpha = Int(source[sourceIndex + 3])
                     let inverseAlpha = 255 - alpha
@@ -218,13 +226,119 @@ enum WatchFaceCompatibilityAnalyzer {
                     canvas[targetIndex + 3] = 255
                 }
             }
-            rendered += 1
+            return true
+        }
+        func sampleValue(_ source: String) -> Int {
+            let key = String(source.prefix(4)).uppercased()
+            switch key {
+            case "0811": return 12       // hour
+            case "1011": return 34       // minute
+            case "0812": return 2026     // year
+            case "1012": return 11       // month
+            case "1812": return 28       // day
+            case "2012": return 6        // weekday
+            case "0841": return 75       // battery
+            case "0821": return 1234     // steps
+            case "0822": return 72       // heart rate
+            default: return 0
+            }
+        }
+
+        let widgetDefinitions = Dictionary(
+            (aodFace.tables.first(where: { $0.id == 7 })?.records ?? [])
+                .filter { $0.isValid }.map { ($0.index, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let animationDefinitions = Dictionary(
+            (aodFace.tables.first(where: { $0.id == 4 })?.records ?? [])
+                .filter { $0.isValid }.map { ($0.index, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var rendered = 0
+        var skipped = 0
+        for element in aodFace.elements {
+            var didRender = false
+            switch element.referenceType {
+            case 2:
+                if let image = singleImage(element.reference) {
+                    didRender = draw(image, at: element.x, element.y)
+                }
+            case 4:
+                if let definition = animationDefinitions[element.reference],
+                   let listIndex = u24(definition.offset),
+                   let frame = imageList(listIndex).first {
+                    didRender = draw(frame, at: element.x, element.y)
+                }
+            case 7:
+                guard let definition = widgetDefinitions[element.reference],
+                      definition.length >= 12,
+                      definition.offset >= 0,
+                      definition.offset <= bytes.count - min(definition.length, bytes.count) else {
+                    skipped += 1
+                    continue
+                }
+                let p = definition.offset
+                let kind = Int(bytes[p + 3]) & 0xF0
+                let source = String(format: "%02X%02X", bytes[p], bytes[p + 1])
+                let listIndex = u24(p + 8) ?? -1
+                let frames = imageList(listIndex)
+                let value = sampleValue(source)
+
+                if kind == 0x10, frames.count >= 10 {
+                    let digitCount = max(1, min(8, Int(bytes[p + 2])))
+                    let align = Int(bytes[p + 3]) & 0x03
+                    let leadingZero = ((Int(bytes[p + 3]) >> 2) & 1) == 1
+                    let spacing = definition.length > 13 ? (Int(bytes[p + 13]) < 128 ? Int(bytes[p + 13]) : Int(bytes[p + 13]) - 256) : 0
+                    let formatted = leadingZero
+                        ? String(format: "%0*d", digitCount, value)
+                        : String(value)
+                    let glyphs = formatted.compactMap { character -> MiWatchFacePreview? in
+                        if character == "-" { return frames.count > 10 ? frames[10] : frames[0] }
+                        guard let digit = character.wholeNumberValue, digit >= 0, digit < 10 else { return nil }
+                        return frames[digit]
+                    }
+                    let totalWidth = glyphs.reduce(0) { $0 + $1.width } + max(0, glyphs.count - 1) * spacing
+                    var x = element.x
+                    if align == 0 { x -= totalWidth }       // right anchored
+                    else if align == 2 { x -= totalWidth / 2 } // centered
+                    var drawnAny = false
+                    for glyph in glyphs {
+                        drawnAny = draw(glyph, at: x, element.y) || drawnAny
+                        x += glyph.width + spacing
+                    }
+                    didRender = drawnAny
+
+                    if definition.length >= 20, bytes[p + 19] == 2,
+                       let unitIndex = u24(p + 16), let unit = singleImage(unitIndex) {
+                        didRender = draw(unit, at: x, element.y) || didRender
+                    }
+                } else if kind == 0x20, !frames.isEmpty {
+                    let mappedCount = max(0, min(256, (definition.length - 16) / 4))
+                    var selected = min(max(value, 0), frames.count - 1)
+                    if mappedCount > 0 {
+                        var bestValue = Int.min
+                        for item in 0..<min(mappedCount, frames.count) {
+                            guard let mapped = i16(p + 16 + item * 4) else { continue }
+                            if mapped <= value && mapped >= bestValue {
+                                bestValue = mapped
+                                selected = item
+                            }
+                        }
+                    }
+                    didRender = draw(frames[selected], at: element.x, element.y)
+                }
+            default:
+                break
+            }
+            if didRender { rendered += 1 } else { skipped += 1 }
         }
 
         guard rendered > 0 else { return nil }
-        let note = skipped > 0
-            ? String.localizedStringWithFormat(String(localized: "Reconstructed from %lld image element(s); %lld widget, animation, or unsupported element(s) were not drawn."), Int64(rendered), Int64(skipped))
-            : String.localizedStringWithFormat(String(localized: "Reconstructed from %lld image element(s)."), Int64(rendered))
+        let note = String.localizedStringWithFormat(
+            String(localized: "Reconstructed from %lld AOD element(s); %lld unsupported or unavailable element(s) were omitted. Numeric widgets use sample values."),
+            Int64(rendered), Int64(skipped)
+        )
         return AODPreviewResult(
             preview: MiWatchFacePreview(width: width, height: height, rgba: Data(canvas)),
             note: note
